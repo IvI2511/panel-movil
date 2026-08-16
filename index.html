@@ -150,6 +150,29 @@
   .nota:last-child{border-bottom:0}
   .nota .fu{font-size:11px; color:var(--txt3); font-weight:650; text-transform:uppercase; letter-spacing:.05em}
 
+  /* personal del dia + calendario de francos (colores fijos del escritorio:
+     son pasteles, el texto va oscuro fijo y funciona en los dos temas) */
+  .pers{display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 2px}
+  .pers .p{display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:650;
+    color:#2f2f2a; border-radius:99px; padding:4px 11px}
+  .pers .p small{font-weight:500; opacity:.7}
+  .calwrap{overflow-x:auto; margin-top:6px; -webkit-overflow-scrolling:touch}
+  table.cal{border-collapse:collapse; font-variant-numeric:tabular-nums}
+  .cal th{font-size:9px; color:var(--txt3); padding:2px 1px; min-width:19px; text-align:center; border-bottom:1px solid var(--line)}
+  .cal th.hoy{color:var(--acc); font-weight:800}
+  .cal td{font-size:9px; text-align:center; padding:2px 1px; color:#2f2f2a; border:1px solid var(--surf)}
+  .cal td.nom{font-size:11px; color:var(--txt2); text-align:left; padding-right:8px; position:sticky; left:0;
+    background:var(--surf); max-width:118px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-weight:600}
+  .leyfr{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px}
+  .leyfr span{font-size:10.5px; color:#2f2f2a; border-radius:5px; padding:2px 7px; font-weight:650}
+  .stockrow{display:grid; grid-template-columns:12px 1fr 82px 70px; align-items:center; gap:8px;
+    font-size:13px; padding:6px 0; border-bottom:1px solid var(--line)}
+  .stockrow:last-child{border-bottom:0}
+  .stockrow .sw{width:11px; height:11px; border-radius:3px}
+  .stockrow .nom{color:var(--txt2); font-weight:600}
+  .stockrow .v{text-align:right; font-variant-numeric:tabular-nums; font-weight:650}
+  .stockrow .aut{text-align:center; font-size:11.5px; font-weight:700; border-radius:99px; padding:3px 0}
+
   section h2.sec{font-size:12.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--txt3); font-weight:700; margin:4px 0 8px}
   /* divisor de grupos, como los grupos Del dia / Del mes del escritorio */
   .divisor{display:flex; align-items:center; gap:10px; margin:10px 0 -2px;
@@ -190,7 +213,6 @@
 <nav class="drawer" id="drawer" aria-label="Secciones">
   <h3>Panel</h3>
   <button class="navit" data-ruta="#general"><span>⛽ Vista general</span></button>
-  <button class="navit" data-ruta="#rapida"><span>⚡ Vista rápida</span></button>
   <h3>Estaciones</h3>
   <div id="navEst"></div>
   <footer>
@@ -446,15 +468,54 @@ function tocable(cardEl, dias, vals, unidad){
 /* =================== vistas =================== */
 function sumaCampo(dias,k){return suma(dias.map(d=>d[k]||0));}
 
+/* ---- helpers de las secciones nuevas ---- */
+const DIAS_MES = new Date(+fechaMax.slice(0,4), +fechaMax.slice(5,7), 0).getDate();
+const flecha = d => '<span class="'+(d>=0?'up':'down')+'">'+(d>=0?'↑':'↓')+' '+
+  Math.abs(d).toFixed(1).replace('.',',')+'%</span>';
+const FR_COLOR={P:'#CFE4F7',MM:'#FFE2AD','T*':'#F2A65E',TN:'#8EA9DB',CT:'#CBA6E3',
+  'M*':'#7FC9BE',F:'#B9E6C4',V:'#E3C6F2',L:'#D9D9D9',FA:'#D96C6C',B:'#A9AFB8'};
+function frColor(c){
+  if(FR_COLOR[c])return FR_COLOR[c];
+  if(c&&c[0]==='T')return FR_COLOR['T*'];
+  if(c&&c[0]==='M')return FR_COLOR['M*'];
+  return '#E4E4E0';
+}
+function porDowDe(fechas, vals){
+  return [1,2,3,4,5,6,0].map(dw=>{
+    const vs=fechas.map((f,i)=>dow(f)===dw?vals[i]:null).filter(v=>v!=null&&v>0);
+    return {l:DSEM[dw], v: vs.length?Math.round(suma(vs)/vs.length):0};});
+}
+function fichaEst(e){
+  return '<div class="est" tabindex="0" role="button" data-ruta="#est/'+e.clave+'">'+
+    '<div class="cab"><span class="sem"></span><span class="nom">'+e.nombre+'</span><span class="enc">'+esc(e.enc)+'</span></div>'+
+    '<div class="litros">'+fmt.format(e.liq)+' <small>L · '+diaLbl(e.ult.fecha)+'</small></div>'+
+    '<figure class="spark">'+spark(e.serie)+'<figcaption>Litros por día · '+mesAct+'</figcaption></figure>'+
+    '<div class="cmp">'+deltaTxt(e.delta)+'</div>'+
+    '<div class="gnc">'+(e.gnc?'GNC '+fmt.format(e.gnc)+' m³':'Sin GNC')+'</div></div>';
+}
+function proyCard(acum, nCon, prevTot, quien){
+  if(!nCon)return '';
+  const proy = acum/nCon*DIAS_MES;
+  const d = prevTot ? (proy-prevTot)/prevTot*100 : null;
+  return '<div class="card"><h2>Proyección de cierre</h2>'+
+    '<div class="baj">'+quien+' · a este ritmo</div>'+
+    '<div class="kpis" style="margin-top:2px">'+
+    '<div class="kpi" style="border:0;padding:0"><div class="lbl">Proyección '+mesAct+'</div>'+
+    '<div class="val">'+kf(Math.round(proy))+' L</div>'+
+    (d==null?'':'<div class="sub">'+flecha(d)+' vs '+mesPrev+'</div>')+'</div>'+
+    '<div class="kpi" style="border:0;padding:0"><div class="lbl">Cerró '+mesPrev+'</div>'+
+    '<div class="val">'+(prevTot?kf(prevTot)+' L':'s/d')+'</div>'+
+    '<div class="sub">'+nCon+' de '+DIAS_MES+' días cargados</div></div></div></div>';
+}
+
 function vGeneral(){
   const mesProd = PRODS.map(p=>({l:p.l,c:p.c,v:suma(ESTS.map(e=>sumaCampo(e.dias,p.k)))}));
   const gncMes = suma(ESTS.map(e=>sumaCampo(e.dias,'gnc')));
+  const diaProdG = PRODS.map(p=>({l:p.l,c:p.c,v:suma(ESTS.map(e=>(e.porFecha[fechaMax]||{})[p.k]||0))})).filter(p=>p.v);
   const medios = MEDIOS.map(m=>({l:m.l,c:m.c,v:suma(ESTS.map(e=>sumaCampo(e.dias,m.k)))})).filter(m=>m.v>0);
   const acumA=[]; grupoDia.reduce((a,v)=>{acumA.push(a+v);return a+v;},0);
   const acumB=[]; grupoPrev.reduce((a,d)=>{acumB.push(a+d.liq);return a+d.liq;},0);
-  const porDow=[1,2,3,4,5,6,0].map(dw=>{
-    const vs=FECHAS.map((f,i)=>dow(f)===dw?grupoDia[i]:null).filter(v=>v!=null);
-    return {l:DSEM[dw], v: vs.length?Math.round(suma(vs)/vs.length):0};});
+  const porDow=porDowDe(FECHAS, grupoDia);
   const rank=ESTS.slice().sort((a,b)=>b.enDia-a.enDia);
   const promPrevG = grupoPrev.length? suma(grupoPrev.map(d=>d.liq))/grupoPrev.length : 0;
 
@@ -472,12 +533,20 @@ function vGeneral(){
   </div>
   ${bandaHTML()}
 
-  <div class="card"><h2>Ranking · ${diaLbl(fechaMax)}</h2><div class="baj">Litros por estación — tocá para abrir su panel</div>
+  <section><h2 class="sec">Estaciones — tocá para abrir su panel</h2>
+  <div class="tarjetas">${ESTS.map(fichaEst).join('')}</div></section>
+
+  <div class="card"><h2>Comparativa · ${diaLbl(fechaMax)}</h2><div class="baj">Litros por estación</div>
     ${rank.map(e=>'<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'"><span class="n">'+e.nombre+'</span>'+
       '<span class="pista"><span class="barra" style="width:'+(e.enDia/(rank[0].enDia||1)*100).toFixed(1)+'%"></span></span>'+
       '<span class="v">'+fmt.format(e.enDia)+'</span></button>').join('')}</div>
 
+  <div class="card"><h2>Combustibles del día</h2><div class="baj">Litros por producto · ${diaLbl(fechaMax)} (GNC en su KPI, en m³)</div>
+    ${donut(diaProdG)}</div>
+
   <div class="divisor">Del mes</div>
+
+  ${proyCard(suma(grupoDia), grupoDia.filter(v=>v>0).length, Math.round(suma(grupoPrev.map(d=>d.liq))), 'Todo el grupo')}
 
   <div class="card" id="gVentas"><h2>Ventas diarias — grupo</h2>
     <div class="baj">Litros líquidos por día · ${mesAct}</div><div class="cch"></div>
@@ -499,7 +568,10 @@ function vGeneral(){
       <span style="color:${PREV_C}"><i></i> ${mesPrev}</span></div></div>
 
   <div class="card"><h2>Por día de la semana</h2><div class="baj">Promedio de litros del grupo · ${mesAct}</div>
-    ${hbars(porDow,'L')}</div>`;
+    ${hbars(porDow,'L')}</div>
+
+  <section><h2 class="sec">Noticias del rubro</h2>
+    <div class="notas">${NOTAS.slice(0,4).map(n=>'<div class="nota"><div class="fu">'+esc(n.fu)+' · '+n.f.slice(8,10)+'/'+n.f.slice(5,7)+'</div>'+esc(n.t)+'</div>').join('')}</div></section>`;
   $('#vista').innerHTML = html;
   const gv=$('#gVentas'); const db=dayBars(FECHAS, grupoDia, {linea2:promPrevG});
   gv.querySelector('.cch').innerHTML = db.svg;
@@ -525,41 +597,109 @@ function vEstacion(clave){
   const medios = MEDIOS.map(m=>({l:m.l,c:m.c,v:sumaCampo(dias,m.k)})).filter(m=>m.v>0);
   const acumA=[]; e.serie.reduce((a,v)=>{acumA.push(a+v);return a+v;},0);
   const acumB=[]; e.prev.reduce((a,d)=>{acumB.push(a+d.liq);return a+d.liq;},0);
-  // GNC: consumo del puente (hoy-ayer) vs vendido
-  let gncCard='';
-  if(e.tieneGnc){
-    const pares=[];
-    for(let i=1;i<dias.length;i++){
-      const a=dias[i-1].pu, b=dias[i].pu;
-      if(a&&b&&dias[i].gnc)pares.push({f:dias[i].fecha, cons:b-a, vend:dias[i].gnc, dif:(b-a)-dias[i].gnc});
-    }
-    if(pares.length){
-      const u=pares[pares.length-1];
-      const difs=pares.map(p=>p.dif);
-      const H=150, pl=40, pb=18, mn=Math.min(...difs,0), mx=Math.max(...difs,1);
-      const x=i=>pl+i*(W-pl-8)/Math.max(pares.length-1,1), y=v=>H-pb-((v-mn)/(mx-mn||1))*(H-pb-14);
-      let svg='<line x1="'+pl+'" x2="'+W+'" y1="'+y(0)+'" y2="'+y(0)+'" stroke="var(--line)"/>';
-      svg+='<path d="'+difs.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1)).join(' ')+'" fill="none" stroke="'+GNC_C+'" stroke-width="2.2"/>';
-      svg+='<text x="'+(pl-5)+'" y="'+(y(mx)+3)+'" text-anchor="end" font-size="10" fill="var(--txt3)">'+kf(Math.round(mx))+'</text>';
-      svg+='<text x="'+(pl-5)+'" y="'+(y(0)+3)+'" text-anchor="end" font-size="10" fill="var(--txt3)">0</text>';
-      gncCard = '<div class="card"><h2>GNC — puente vs. surtidores</h2>'+
-        '<div class="baj">Dato de referencia, sin semáforo. Ayer: consumo puente '+fmt.format(u.cons)+
-        ' m³ · vendido '+fmt.format(u.vend)+' m³ · dif '+fmt.format(u.dif)+' m³</div>'+
-        '<svg class="ch" viewBox="0 0 '+W+' '+H+'">'+svg+'</svg></div>';
-    }
-  }
-  // precios + zona
-  const z = DATA.zona[clave]||{}; const med=z.medianas||{};
-  const filasP = PRECIOS.map(p=>{
-    let v=null; for(const d of dias) if(d['pr_'+p.k]) v=d['pr_'+p.k];
-    if(!v)return '';
-    const m=med[p.k];
-    const cmp = m ? '<span class="z">zona $ '+fmt.format(m)+' ('+((v-m)/m*100).toFixed(1).replace('.',',')+'%)</span>' : '<span class="z"></span>';
-    return '<div class="filaP"><span class="sw" style="background:'+p.c+'"></span>'+
-      '<span class="nom">'+p.l+'</span>'+cmp+'<span class="pv">$ '+fmt.format(v)+'</span></div>';
-  }).join('');
   const aceiteMes = sumaCampo(dias,'ac_lts');
-  const evol = stepPrecios(dias);
+  const porDowE = porDowDe(fech, e.serie);
+
+  // Quienes trabajan hoy (francos de App Francos, ultimo dia con datos)
+  let personalHtml='';
+  const fr = e.francos||{};
+  if((fr.hoy||[]).length){
+    const chip = p => '<span class="p" style="background:'+frColor(p.c)+'">'+esc(p.n)+
+      (p.t||p.s?'<small>'+esc([p.t,p.s].filter(Boolean).join(' · '))+'</small>':'')+'</span>';
+    const trab = fr.hoy.filter(p=>p.e==='trabaja'), resto = fr.hoy.filter(p=>p.e!=='trabaja');
+    personalHtml = '<div class="card"><h2>Quiénes trabajan · '+diaLbl(e.ult.fecha)+'</h2>'+
+      '<div class="baj">Según el plan de App Francos</div>'+
+      '<div class="pers">'+trab.map(chip).join('')+'</div>'+
+      (resto.length?'<div class="baj" style="margin:8px 0 4px">Francos y licencias</div>'+
+        '<div class="pers">'+resto.map(chip).join('')+'</div>':'')+'</div>';
+  }
+
+  // Stock y autonomia: varillas por tanque + capacidad por producto + ritmo
+  let stockHtml='';
+  if((e.tanques||[]).length){
+    const clave_de = n => { n=(n||'').toUpperCase();
+      if(n.includes('DIESEL'))return 'vpd';
+      if(n.includes('V-POWER')||n.includes('V POWER'))return 'vpn';
+      if(n.includes('SUPER'))return 'sup';
+      if(n.includes('EVOLUX'))return 'form'; return null; };
+    const stock={}, cap={};
+    e.tanques.forEach(t=>{const k=clave_de(t.prod); if(k)stock[k]=(stock[k]||0)+(t.med||0);});
+    (e.productos||[]).forEach(p=>{const k=clave_de(p.prod); if(k&&p.cap_m3)cap[k]=(cap[k]||0)+p.cap_m3*1000;});
+    const filas = PRODS.filter(p=>stock[p.k]!=null).map(p=>{
+      const ultimos = dias.slice(-7).map(d=>d[p.k]||0).filter(v=>v>0);
+      const ritmo = ultimos.length? suma(ultimos)/ultimos.length : 0;
+      const dias_aut = ritmo? stock[p.k]/ritmo : null;
+      const col = dias_aut==null?'var(--surf1)':dias_aut<=2?'var(--bad-bg)':dias_aut<=4?'var(--warn-bg)':'var(--ok-bg)';
+      const txt = dias_aut==null?'—':fmt1.format(dias_aut)+' días';
+      const colTx = dias_aut==null?'var(--txt3)':dias_aut<=2?'var(--bad)':dias_aut<=4?'var(--warn)':'var(--ok)';
+      return '<div class="stockrow"><span class="sw" style="background:'+p.c+'"></span>'+
+        '<span class="nom">'+p.l+(cap[p.k]?' <small style="color:var(--txt3)">/ '+kf(cap[p.k])+' L</small>':'')+'</span>'+
+        '<span class="v">'+fmt.format(stock[p.k])+' L</span>'+
+        '<span class="aut" style="background:'+col+'; color:'+colTx+'">'+txt+'</span></div>';
+    }).join('');
+    if(filas)stockHtml='<div class="card"><h2>Stock y autonomía</h2>'+
+      '<div class="baj">Varillas del '+diaLbl(e.ult.fecha)+' · autonomía al ritmo de los últimos días</div>'+filas+'</div>';
+  }
+
+  // Despacho por tanque (del ultimo dia)
+  let tanquesHtml='';
+  if((e.tanques||[]).length){
+    tanquesHtml = '<div class="card"><h2>Despacho por tanque · '+diaLbl(e.ult.fecha)+'</h2>'+
+      '<div style="overflow-x:auto"><table><tr><th>Tq</th><th>Producto</th><th>Venta L</th><th>Varilla L</th><th>Camión L</th></tr>'+
+      e.tanques.map(t=>'<tr><td>'+(t.tk??'')+'</td><td>'+esc(t.prod||'')+'</td><td>'+fmt.format(t.venta||0)+
+        '</td><td>'+fmt.format(t.med||0)+'</td><td>'+(t.cam?fmt.format(t.cam):'—')+'</td></tr>').join('')+
+      '</table></div></div>';
+  }
+
+  // Mix de combustibles del mes (como el escritorio: 3 miradas)
+  const s_ = k => sumaCampo(dias,k);
+  const mixHtml = '<div class="card"><h2>Mix de combustibles</h2><div class="baj">'+mesAct+' · litros (GNC en m³)</div>'+
+    hbars([{l:'Premium (V-P + V/P D)',v:s_('vpn')+s_('vpd'),c:'#7F77DD'},
+           {l:'Común (Súper + Evolux)',v:s_('sup')+s_('form'),c:'#378ADD'}],'L',true)+
+    '<div style="height:8px"></div>'+
+    hbars([{l:'Nafta (V-P + Súper)',v:s_('vpn')+s_('sup'),c:'#378ADD'},
+           {l:'Gasoil (V/P D + Evolux)',v:s_('vpd')+s_('form'),c:'#1D9E75'}],'L',true)+
+    (e.tieneGnc?'<div style="height:8px"></div>'+
+    hbars([{l:'Nafta',v:s_('vpn')+s_('sup'),c:'#378ADD'},
+           {l:'Gasoil',v:s_('vpd')+s_('form'),c:'#1D9E75'},
+           {l:'GNC (m³)',v:s_('gnc'),c:GNC_C}],'',true):'')+'</div>';
+
+  // Camiones del mes
+  let camionesHtml='';
+  const cams = e.camiones||[];
+  if(cams.length){
+    const abrev = c => [['V-POWER','V-P'],['SUPER','Súper'],['V/P DIESEL','V/P D'],['Evolux D','Evolux']]
+      .map(([k,n])=>c[k]?n+' '+kf(c[k]):null).filter(Boolean).join(' · ');
+    camionesHtml = '<div class="card"><h2>Camiones del mes</h2>'+
+      '<div class="baj">'+cams.length+' descargas · '+kf(suma(cams.map(c=>c.litros||0)))+' L en total</div>'+
+      cams.map(c=>'<div class="nota"><div class="fu">'+String(c.d).padStart(2,'0')+'/'+String(c.m).padStart(2,'0')+
+        (c.boleta?' · boleta '+esc(c.boleta):'')+'</div><b>'+fmt.format(c.litros||0)+' L</b>'+
+        (abrev(c)?' <span style="color:var(--txt2)">— '+abrev(c)+'</span>':'')+'</div>').join('')+'</div>';
+  }
+
+  // Observaciones del encargado (dias del mes que traen texto)
+  let obsHtml='';
+  const conObs = dias.filter(d=>d.obs).reverse();
+  if(conObs.length){
+    obsHtml = '<div class="card"><h2>Observaciones del encargado</h2>'+
+      conObs.map(d=>'<div class="nota"><div class="fu">'+diaLbl(d.fecha)+'</div>'+esc(d.obs)+'</div>').join('')+'</div>';
+  }
+
+  // Calendario del personal (mes entero, compacto y deslizable)
+  let calHtml='';
+  if((fr.cal||[]).length){
+    const hoyD = Number(e.ult.fecha.slice(8,10));
+    const cab = '<tr><th style="text-align:left">Persona</th>'+Array.from({length:DIAS_MES},(_,i)=>
+      '<th'+(i+1===hoyD?' class="hoy"':'')+'>'+(i+1)+'</th>').join('')+'</tr>';
+    const filas = fr.cal.map(p=>'<tr><td class="nom">'+esc(p.n)+'</td>'+
+      Array.from({length:DIAS_MES},(_,i)=>{const c=p.c[String(i+1)]||'';
+        return '<td style="background:'+(c?frColor(c):'transparent')+'">'+esc(c)+'</td>';}).join('')+'</tr>').join('');
+    const codigos=[...new Set(fr.cal.flatMap(p=>Object.values(p.c)))].filter(Boolean).sort();
+    calHtml = '<div class="card"><h2>Calendario del personal</h2>'+
+      '<div class="baj">'+mesAct+' · deslizá para ver el mes entero</div>'+
+      '<div class="calwrap"><table class="cal">'+cab+filas+'</table></div>'+
+      '<div class="leyfr">'+codigos.map(c=>'<span style="background:'+frColor(c)+'">'+esc(c)+'</span>').join('')+'</div></div>';
+  }
 
   const html = `
   <button class="volver" data-ruta="#general">‹ Vista general</button>
@@ -572,7 +712,7 @@ function vEstacion(clave){
     <div class="kpi"><div class="lbl">Litros · ${diaLbl(e.ult.fecha)}</div><div class="val">${fmt.format(e.liq)} L</div>
       <div class="sub">${deltaTxt(e.delta)}</div></div>
     <div class="kpi"><div class="lbl">GNC · ${diaLbl(e.ult.fecha)}</div><div class="val">${e.gnc?fmt.format(e.gnc)+' m³':'—'}</div>
-      <div class="sub">${e.tieneGnc?'puente en el detalle':'no vende GNC'}</div></div>
+      <div class="sub">${e.tieneGnc?'vendido por surtidores':'no vende GNC'}</div></div>
     <div class="kpi"><div class="lbl">Cobrado digital</div><div class="val">$ ${kf(e.fact)}</div>
       <div class="sub">MP + tarjetas + SB + red.</div></div>
     <div class="kpi"><div class="lbl">Prom. del mes</div><div class="val">${fmt.format(Math.round(e.prom))} L</div>
@@ -580,16 +720,18 @@ function vEstacion(clave){
   </div>
 
   <div class="card" id="eComb"><h2>Combustibles</h2>
-    <div class="chips"><button class="chip act" data-m="dia">Ayer</button><button class="chip" data-m="mes">El mes</button></div>
+    <div class="chips"><button class="chip act" data-m="dia">El día</button><button class="chip" data-m="mes">El mes</button></div>
     <div class="cdonut">${donut(diaProd)}</div></div>
 
-  ${gncCard}
+  ${personalHtml}
 
-  <div class="card"><h2>Precios del día · vs. zona</h2>
-    <div class="baj">${z.en_radio?z.en_radio+' estaciones declaradas en '+fmt1.format(z.radio_km)+' km (dato oficial, puede venir viejo)':'Precio propio del día'}</div>
-    ${filasP}</div>
+  ${stockHtml}
+
+  ${tanquesHtml}
 
   <div class="divisor">Del mes</div>
+
+  ${proyCard(suma(e.serie), e.serie.filter(v=>v>0).length, Math.round(suma(e.prev.map(d=>d.liq))), e.nombre)}
 
   <div class="card" id="eVentas"><h2>Ventas diarias</h2><div class="baj">Litros líquidos por día · ${mesAct}</div>
     <div class="cch"></div>
@@ -597,17 +739,26 @@ function vEstacion(clave){
       ${e.promPrev?'<span style="color:'+GNC_C+'"><i></i> media de '+mesPrev+'</span>':''}</div>
     <div class="lectura">Tocá una barra para ver el día.</div></div>
 
-  ${evol?'<div class="card"><h2>Evolución de precios</h2><div class="baj">Combustibles líquidos · $ por litro (GNC y aceite, en la tabla de arriba)</div>'+evol+'</div>':''}
+  ${mixHtml}
+
+  <div class="card"><h2>Por día de la semana</h2><div class="baj">Promedio de litros · ${mesAct}</div>
+    ${hbars(porDowE,'L')}</div>
 
   <div class="card"><h2>Medios de pago del mes</h2><div class="baj">${e.nombre} · ${mesAct}</div>
     ${medios.length?hbars(medios,'$',true):'<p class="baj">La planilla no trae el desglose.</p>'}</div>
+
+  ${camionesHtml}
 
   ${aceiteMes?'<div class="card"><h2>Aceite</h2><div class="baj">Venta del mes</div><div class="kpi" style="border:0;padding:0"><div class="val">'+fmt1.format(aceiteMes)+' L</div></div></div>':''}
 
   <div class="card"><h2>Acumulado vs. ${mesPrev}</h2><div class="baj">Litros acumulados por día del mes</div>
     ${lineas(acumA, acumB.length?acumB:null)}
     <div class="ref"><span style="color:var(--acc)"><i style="border-top-style:solid"></i> ${mesAct}</span>
-      ${acumB.length?'<span style="color:'+PREV_C+'"><i></i> '+mesPrev+'</span>':''}</div></div>`;
+      ${acumB.length?'<span style="color:'+PREV_C+'"><i></i> '+mesPrev+'</span>':''}</div></div>
+
+  ${obsHtml}
+
+  ${calHtml}`;
   $('#vista').innerHTML = html;
   const ev=$('#eVentas'); const db=dayBars(fech, e.serie, {linea2:e.promPrev||0});
   ev.querySelector('.cch').innerHTML=db.svg;
@@ -619,37 +770,12 @@ function vEstacion(clave){
   });
 }
 
-function vRapida(){
-  const rank=ESTS.slice().sort((a,b)=>b.enDia-a.enDia);
-  $('#vista').innerHTML = `
-  <div class="kpis">
-    <div class="kpi"><div class="lbl">Litros · ${diaLbl(fechaMax)}</div><div class="val">${fmt.format(TOT.liq)} L</div>
-      <div class="sub">${deltaTxt(TOT.delta)}</div></div>
-    <div class="kpi"><div class="lbl">GNC · ${diaLbl(fechaMax)}</div><div class="val">${fmt.format(TOT.gnc)} m³</div>
-      <div class="sub">${conGnc} estaciones con GNC</div></div>
-  </div>
-  ${bandaHTML()}
-  <section><h2 class="sec">Estaciones — tocá para abrir su panel</h2>
-  <div class="tarjetas">${ESTS.map(e=>`
-    <div class="est" tabindex="0" role="button" data-ruta="#est/${e.clave}">
-      <div class="cab"><span class="sem"></span><span class="nom">${e.nombre}</span><span class="enc">${esc(e.enc)}</span></div>
-      <div class="litros">${fmt.format(e.liq)} <small>L ayer</small></div>
-      <figure class="spark">${spark(e.serie)}<figcaption>Litros por día · ${mesAct}</figcaption></figure>
-      <div class="cmp">${deltaTxt(e.delta)}</div>
-      <div class="gnc">${e.gnc?'GNC '+fmt.format(e.gnc)+' m³':'Sin GNC'}</div>
-    </div>`).join('')}</div></section>
-  <section><h2 class="sec">Noticias del rubro</h2>
-    <div class="notas">${NOTAS.slice(0,4).map(n=>'<div class="nota"><div class="fu">'+esc(n.fu)+' · '+n.f.slice(8,10)+'/'+n.f.slice(5,7)+'</div>'+esc(n.t)+'</div>').join('')}</div></section>`;
-}
-
 /* =================== navegacion =================== */
-const TITULOS = {'#general':'Panel Estaciones','#rapida':'Vista rápida'};
 function render(){
   const h=location.hash||'#general';
   window.scrollTo(0,0);
   if(h.startsWith('#est/')){const cl=h.slice(5); vEstacion(cl);
     const e=ESTS.find(x=>x.clave===cl); $('#titVista').textContent=e?e.nombre:'Panel Estaciones';}
-  else if(h==='#rapida'){vRapida(); $('#titVista').textContent='Vista rápida';}
   else {vGeneral(); $('#titVista').textContent='Panel Estaciones';}
   document.querySelectorAll('.navit').forEach(b=>b.classList.toggle('act',b.dataset.ruta===h));
   cerrarNav();
