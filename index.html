@@ -146,7 +146,9 @@
   .est .spark figcaption{font-size:10px; color:var(--txt3); text-align:right; margin-top:2px}
   .est svg{display:block; width:118px; height:40px}
   .notas{background:var(--surf); border:1px solid var(--line); border-radius:13px; padding:6px 14px}
-  .nota{padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; line-height:1.35}
+  .nota{display:block; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; line-height:1.35}
+  a.nota{color:inherit; text-decoration:none}
+  a.nota:active{background:var(--acc-soft)}
   .nota:last-child{border-bottom:0}
   .nota .fu{font-size:11px; color:var(--txt3); font-weight:650; text-transform:uppercase; letter-spacing:.05em}
 
@@ -257,17 +259,33 @@ async function cargar(){
     try{localStorage.setItem(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos}));}catch(e){}
     iniciar(datos);
   }catch(err){
+    // Este es el camino del caso mas comun y esperado: quedarse sin senal en
+    // la estacion. Era el unico de todo el archivo sin manejo de error atras:
+    // si la copia quedo cortada (un setItem sin cuota) o viene de un formato
+    // viejo, el JSON.parse o el iniciar() tiran una excepcion que nace ADENTRO
+    // del catch, no la agarra nadie, y la pantalla queda en "Cargando los
+    // datos..." para siempre, sin reintentar y sin avisar.
     const c=localStorage.getItem(CLAVE_CACHE);
+    let restaurado=false;
+    try{
     if(c){
       const {t,datos}=JSON.parse(c);
       iniciar(datos);
+      restaurado=true;
       const av=document.createElement('div');
       av.className='banda'; av.style.background='var(--warn-bg)'; av.style.color='var(--warn)';
       av.innerHTML='<span class="punto" style="background:var(--warn)"></span><span>Sin conexión'+
         '<small>Mostrando lo último descargado ('+new Date(t).toLocaleString('es-AR',
         {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+')</small></span>';
       document.querySelector('.wrap').prepend(av);
-    }else{
+    }
+    }catch(err2){
+      // La copia no sirve. Se tira, asi el proximo arranque no vuelve a
+      // tropezar con la misma piedra, y se cae a la pantalla de error.
+      try{localStorage.removeItem(CLAVE_CACHE);}catch(err3){}
+      restaurado=false;
+    }
+    if(!restaurado){
       pantalla('<div class="card"><h2>No se pudo cargar</h2><div class="baj">Revisá la señal y probá de nuevo.</div>'+
         '<button class="chip act" onclick="location.reload()">Reintentar</button></div>');
     }
@@ -290,7 +308,6 @@ const PRODS = [
   {k:'vpd',  l:'V-Power diesel',   c:'#1D9E75'},
   {k:'form', l:'Fórmula / Evolux', c:'#EF9F27'}];
 const GNC_C = '#D85A30', PREV_C = '#888780';
-const PRECIOS = PRODS.concat([{k:'gnc',l:'GNC',c:GNC_C},{k:'aceite',l:'Aceite',c:'#9A8CC0'}]);
 const MEDIOS = [
   {k:'pg_efectivo',l:'Efectivo',c:'#D85A30'},{k:'pg_tarjetas',l:'Tarjetas',c:'#378ADD'},
   {k:'pg_mpago',l:'M Pago',c:'#7F77DD'},{k:'pg_shellbox',l:'Shell Box',c:'#1D9E75'},
@@ -305,20 +322,51 @@ const dow = f => {const [a,m,d]=f.split('-').map(Number); return new Date(a,m-1,
 const diaLbl = f => DSEM[dow(f)]+' '+Number(f.slice(8,10))+'/'+f.slice(5,7);
 const suma = a => a.reduce((x,y)=>x+(y||0),0);
 const esc = t => String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+/* Un href sale de una fuente de afuera (el feed de noticias), asi que ademas
+   de escapar la comilla se exige http(s): corta de raiz un javascript: */
+const urlSegura = u => /^https?:\/\//i.test(String(u||''))
+  ? String(u).replace(/&/g,'&amp;').replace(/"/g,'&quot;') : '';
+/* La URL viaja en `u`. Hoy movil.py la descarta al armar el JSON (esa mitad es
+   PORT-36 del lado del panel de escritorio): mientras no llegue la noticia se
+   ve como texto, y el dia que llegue enlaza sola, sin tocar nada aca. */
+function notaHTML(n){
+  const cuerpo = '<div class="fu">'+esc(n.fu)+' · '+n.f.slice(8,10)+'/'+n.f.slice(5,7)+'</div>'+esc(n.t);
+  const href = urlSegura(n.u);
+  return href ? '<a class="nota" href="'+href+'" target="_blank" rel="noopener noreferrer">'+cuerpo+'</a>'
+              : '<div class="nota">'+cuerpo+'</div>';
+}
 
-/* ---- resumen por estacion (indexado por FECHA: una rezagada no corre nada) ---- */
+/* ---- resumen por estacion (indexado por FECHA: una rezagada no corre nada) ----
+   Una estacion sin NINGUNA fila del mes SE QUEDA en la lista: es el caso
+   extremo de "falta", no una estacion que no existe. Filtrarla hacia que el
+   panel dijera "Sin faltantes - 5/5" siendo 6 estaciones. Todo lo que dibuja
+   consulta `sinDatos` antes de ir a buscar un ultimo dia que no existe. */
 const ESTS = DATA.estaciones.map(e => {
   const serie = e.dias.map(d=>d.liq||0);
   const ult = e.dias[e.dias.length-1]||{};
   const prom = serie.length ? suma(serie)/serie.length : 0;
   const promPrev = e.prev.length ? suma(e.prev.map(d=>d.liq))/e.prev.length : 0;
   const porFecha = {}; e.dias.forEach(d=>{porFecha[d.fecha]=d;});
-  return {...e, serie, ult, prom, promPrev, porFecha,
+  // El GNC se promedia sobre TODOS los dias cargados, no solo los que vendieron:
+  // un dia con el compresor parado es un dia de venta cero, no un dia que no cuenta.
+  const gncProm = serie.length ? suma(e.dias.map(d=>d.gnc||0))/serie.length : 0;
+  return {...e, serie, ult, prom, promPrev, porFecha, gncProm,
+    sinDatos: !e.dias.length,
     liq: ult.liq||0, gnc: ult.gnc||0, fact: ult.fact||0,
     enc: ult.encargado||'', delta: prom?((ult.liq||0)-prom)/prom*100:0,
+    gncDelta: gncProm?((ult.gnc||0)-gncProm)/gncProm*100:null,
     tieneGnc: e.dias.some(d=>d.gnc)};
-}).filter(e => e.dias.length);
+});
 const FECHAS = [...new Set(ESTS.flatMap(e=>e.dias.map(d=>d.fecha)))].sort();
+// Si NINGUNA estacion cargo un solo dia no hay fechaMax, y todo lo de abajo
+// (titulos, proyeccion, graficos) sale de ahi. Se avisa y se corta.
+if(!FECHAS.length){
+  pantalla('<div class="card"><h2>Todavia no hay planillas</h2><div class="baj">'+
+    'Ninguna de las '+ESTS.length+' estaciones cargo un dia de este mes. '+
+    'Los datos entran solos con la publicacion de la manana.</div>'+
+    '<button class="chip act" onclick="location.reload()">Reintentar</button></div>');
+  return;
+}
 const fechaMax = FECHAS[FECHAS.length-1];
 ESTS.forEach(e=>{
   e.fresca = e.ult.fecha === fechaMax;
@@ -326,13 +374,15 @@ ESTS.forEach(e=>{
   e.enDia = d.liq||0; e.gncDia = d.gnc||0; e.factDia = d.fact||0;
 });
 const frescas = ESTS.filter(e=>e.fresca);
-const conGnc = ESTS.filter(e=>e.tieneGnc).length;
 // Los KPIs del dia suman SOLO el ultimo dia real (fechaMax): una estacion que
 // no mando su planilla aporta 0 y la banda la nombra, en vez de mezclar dias.
 const TOT = {
   liq: suma(ESTS.map(e=>e.enDia)), gnc: suma(ESTS.map(e=>e.gncDia)),
-  fact: suma(ESTS.map(e=>e.factDia)), prom: suma(ESTS.map(e=>e.prom))};
+  fact: suma(ESTS.map(e=>e.factDia)), prom: suma(ESTS.map(e=>e.prom)),
+  gncProm: suma(ESTS.map(e=>e.gncProm))};
 TOT.delta = TOT.prom ? (TOT.liq-TOT.prom)/TOT.prom*100 : 0;
+// Mismo criterio que los litros: el dia contra el dia promedio de ESTE mes.
+TOT.gncDelta = TOT.gncProm ? (TOT.gnc-TOT.gncProm)/TOT.gncProm*100 : null;
 const MESN=['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
   'septiembre','octubre','noviembre','diciembre'];
 const mesAct = MESN[Number(fechaMax.slice(5,7))-1];
@@ -350,7 +400,8 @@ function bandaHTML(){
   if(frescas.length===ESTS.length)
     return '<div class="banda"><span class="punto"></span><span>Sin faltantes'+
       '<small>Las '+ESTS.length+' planillas al día ('+diaLbl(fechaMax)+') · publicado '+hora+'</small></span></div>';
-  const faltan = ESTS.filter(e=>!e.fresca).map(e=>e.nombre+' (última: '+diaLbl(e.ult.fecha)+')');
+  const faltan = ESTS.filter(e=>!e.fresca).map(e=>e.nombre+
+    (e.sinDatos ? ' (sin planillas este mes)' : ' (última: '+diaLbl(e.ult.fecha)+')'));
   return '<div class="banda" style="background:var(--warn-bg); color:var(--warn)">'+
     '<span class="punto" style="background:var(--warn)"></span><span>Falta'+(faltan.length>1?'n':'')+' '+faltan.length+
     '<small>'+faltan.join(' · ')+'</small></span></div>';
@@ -422,24 +473,6 @@ function hbars(items, unidad, colores){
     (colores?'background:'+it.c:'')+'"></span></span>'+
     '<span class="v">'+(unidad==='$'?'$ ':'')+kf(it.v)+(unidad&&unidad!=='$'?' '+unidad:'')+'</span></div>').join('');
 }
-function stepPrecios(dias){
-  // Solo los 4 liquidos: el aceite ($6.000) y el GNC (~$650) en el mismo eje
-  // aplastan las lineas de $2.100-2.500 hasta hacerlas indistinguibles.
-  const con = PRODS.filter(p=>dias.some(d=>d['pr_'+p.k]));
-  if(!con.length)return '';
-  const H=170, pl=44, pb=20;
-  const todos = con.flatMap(p=>dias.map(d=>d['pr_'+p.k]).filter(Boolean));
-  const mn=Math.min(...todos)*.98, mx=Math.max(...todos)*1.02;
-  const x=i=>pl+i*(W-pl-8)/Math.max(dias.length-1,1), y=v=>H-pb-((v-mn)/(mx-mn))*(H-pb-14);
-  let out=''; [mn,(mn+mx)/2,mx].forEach(v=>{out+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--line)"/>'+
-    '<text x="'+(pl-5)+'" y="'+(y(v)+3)+'" text-anchor="end" font-size="10" fill="var(--txt3)">$'+kf(Math.round(v))+'</text>';});
-  con.forEach(p=>{let d='',ult=null;
-    dias.forEach((dd,i)=>{const v=dd['pr_'+p.k]||ult; if(v==null)return;
-      d+=(d?' L':'M')+x(i).toFixed(1)+' '+y(v).toFixed(1); if(ult!=null&&v!==ult)d+=' L'+x(i).toFixed(1)+' '+y(v).toFixed(1); ult=v;});
-    out+='<path d="'+d+'" fill="none" stroke="'+p.c+'" stroke-width="2.2" stroke-linejoin="round"/>';});
-  let lx=''; dias.forEach((d,i)=>{const f=d.fecha; if(i%4===0||i===dias.length-1)lx+='<text x="'+x(i)+'" y="'+(H-5)+'" text-anchor="middle" font-size="9.5" fill="var(--txt3)">'+Number(f.slice(8,10))+'/'+Number(f.slice(5,7))+'</text>';});
-  return '<svg class="ch" viewBox="0 0 '+W+' '+H+'">'+out+lx+'</svg>';
-}
 function spark(serie){
   const W2=118,H=40,p=4, mn=Math.min(...serie), mx=Math.max(...serie);
   const x=i=>p+i*(W2-2*p)/Math.max(serie.length-1,1);
@@ -453,6 +486,13 @@ function spark(serie){
 }
 const deltaTxt = d => '<span class="'+(d>=0?'up':'down')+'">'+(d>=0?'↑':'↓')+' '+
   Math.abs(d).toFixed(1).replace('.',',')+'%</span> vs prom. del mes';
+/* El GNC se compara igual que los litros: el dia contra el dia promedio del
+   mes. Antes decia "N estaciones con GNC" (redundante) y, en el panel de una
+   estacion, "no vende GNC" — una afirmacion que el panel no puede sostener:
+   el JSON no dice quien TIENE surtidor de GNC, solo cuanto vendio cada dia.
+   Un mes entero sin GNC puede ser una estacion que no lo tiene o un compresor
+   parado, y el panel no distingue. Asi que informa lo que sabe. */
+const gncSub = d => d==null ? 'sin GNC este mes' : deltaTxt(d);
 
 /* lectura al tocar una barra */
 function tocable(cardEl, dias, vals, unidad){
@@ -486,6 +526,14 @@ function porDowDe(fechas, vals){
     return {l:DSEM[dw], v: vs.length?Math.round(suma(vs)/vs.length):0};});
 }
 function fichaEst(e){
+  // Sin una sola fila del mes no hay ultimo dia, ni sparkline, ni delta: la
+  // ficha dice eso mismo en vez de desaparecer o inventar ceros.
+  if(e.sinDatos)
+    return '<div class="est" tabindex="0" role="button" data-ruta="#est/'+e.clave+'">'+
+      '<div class="cab"><span class="sem" style="background:var(--warn)"></span>'+
+      '<span class="nom">'+e.nombre+'</span></div>'+
+      '<div class="litros" style="color:var(--txt3)">—</div>'+
+      '<div class="cmp" style="color:var(--warn)">Sin planillas este mes</div></div>';
   return '<div class="est" tabindex="0" role="button" data-ruta="#est/'+e.clave+'">'+
     '<div class="cab"><span class="sem"></span><span class="nom">'+e.nombre+'</span><span class="enc">'+esc(e.enc)+'</span></div>'+
     '<div class="litros">'+fmt.format(e.liq)+' <small>L · '+diaLbl(e.ult.fecha)+'</small></div>'+
@@ -525,7 +573,7 @@ function vGeneral(){
     <div class="kpi"><div class="lbl">Litros · ${diaLbl(fechaMax)}</div><div class="val">${fmt.format(TOT.liq)} L</div>
       <div class="sub">${deltaTxt(TOT.delta)}</div></div>
     <div class="kpi"><div class="lbl">GNC · ${diaLbl(fechaMax)}</div><div class="val">${fmt.format(TOT.gnc)} m³</div>
-      <div class="sub">${conGnc} estaciones con GNC</div></div>
+      <div class="sub">${gncSub(TOT.gncDelta)}</div></div>
     <div class="kpi"><div class="lbl">Cobrado digital</div><div class="val">$ ${kf(TOT.fact)}</div>
       <div class="sub">MP + tarjetas + SB + redención</div></div>
     <div class="kpi"><div class="lbl">Planillas</div><div class="val">${frescas.length}/${ESTS.length}</div>
@@ -539,7 +587,7 @@ function vGeneral(){
   <div class="card"><h2>Comparativa · ${diaLbl(fechaMax)}</h2><div class="baj">Litros por estación</div>
     ${rank.map(e=>'<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'"><span class="n">'+e.nombre+'</span>'+
       '<span class="pista"><span class="barra" style="width:'+(e.enDia/(rank[0].enDia||1)*100).toFixed(1)+'%"></span></span>'+
-      '<span class="v">'+fmt.format(e.enDia)+'</span></button>').join('')}</div>
+      '<span class="v">'+(e.sinDatos?'—':fmt.format(e.enDia))+'</span></button>').join('')}</div>
 
   <div class="card"><h2>Combustibles del día</h2><div class="baj">Litros por producto · ${diaLbl(fechaMax)} (GNC en su KPI, en m³)</div>
     ${donut(diaProdG)}</div>
@@ -571,7 +619,7 @@ function vGeneral(){
     ${hbars(porDow,'L')}</div>
 
   <section><h2 class="sec">Noticias del rubro</h2>
-    <div class="notas">${NOTAS.slice(0,4).map(n=>'<div class="nota"><div class="fu">'+esc(n.fu)+' · '+n.f.slice(8,10)+'/'+n.f.slice(5,7)+'</div>'+esc(n.t)+'</div>').join('')}</div></section>`;
+    <div class="notas">${NOTAS.slice(0,4).map(notaHTML).join('')}</div></section>`;
   $('#vista').innerHTML = html;
   const gv=$('#gVentas'); const db=dayBars(FECHAS, grupoDia, {linea2:promPrevG});
   gv.querySelector('.cch').innerHTML = db.svg;
@@ -590,6 +638,21 @@ function vGeneral(){
 
 function vEstacion(clave){
   const e = ESTS.find(x=>x.clave===clave); if(!e){location.hash='#general';return;}
+  // Sin una fila del mes no hay ultimo dia: todo lo de abajo arranca por
+  // diaLbl(e.ult.fecha) y reventaria. Se explica el faltante y se corta.
+  if(e.sinDatos){
+    const cerroPrev = suma(e.prev.map(d=>d.liq||0));
+    $('#vista').innerHTML =
+      '<button class="volver" data-ruta="#general">‹ Vista general</button>'+
+      '<div class="est-cab"><span class="sem" style="background:var(--warn)"></span><h1>'+e.nombre+'</h1>'+
+      '<span class="tag" style="background:var(--warn-bg);color:var(--warn)">Sin planillas este mes</span></div>'+
+      '<div class="card"><h2>Todavía no cargó nada de '+mesAct+'</h2>'+
+      '<div class="baj">No hay ni un día de esta estación en el mes en curso, '+
+      'así que no hay nada para graficar.'+
+      (cerroPrev?' En '+mesPrev+' cerró con '+fmt.format(Math.round(cerroPrev))+' L.':'')+
+      '</div></div>';
+    return;
+  }
   const dias=e.dias, ult=e.ult;
   const fech = dias.map(d=>d.fecha);   // las fechas PROPIAS (puede venir corta)
   const diaProd = PRODS.map(p=>({l:p.l,c:p.c,v:ult[p.k]||0})).filter(p=>p.v);
@@ -712,7 +775,7 @@ function vEstacion(clave){
     <div class="kpi"><div class="lbl">Litros · ${diaLbl(e.ult.fecha)}</div><div class="val">${fmt.format(e.liq)} L</div>
       <div class="sub">${deltaTxt(e.delta)}</div></div>
     <div class="kpi"><div class="lbl">GNC · ${diaLbl(e.ult.fecha)}</div><div class="val">${e.gnc?fmt.format(e.gnc)+' m³':'—'}</div>
-      <div class="sub">${e.tieneGnc?'vendido por surtidores':'no vende GNC'}</div></div>
+      <div class="sub">${gncSub(e.gncDelta)}</div></div>
     <div class="kpi"><div class="lbl">Cobrado digital</div><div class="val">$ ${kf(e.fact)}</div>
       <div class="sub">MP + tarjetas + SB + red.</div></div>
     <div class="kpi"><div class="lbl">Prom. del mes</div><div class="val">${fmt.format(Math.round(e.prom))} L</div>
@@ -795,7 +858,8 @@ document.addEventListener('keydown',e=>{
 window.addEventListener('hashchange',render);
 
 $('#navEst').innerHTML = ESTS.map(e=>
-  '<button class="navit" data-ruta="#est/'+e.clave+'"><span class="pt"></span><span>'+e.nombre+'</span><small>'+kf(e.liq)+' L</small></button>').join('');
+  '<button class="navit" data-ruta="#est/'+e.clave+'"><span class="pt"></span><span>'+e.nombre+'</span><small>'+
+  (e.sinDatos?'sin planillas':kf(e.liq)+' L')+'</small></button>').join('');
 
 /* ticker inferior */
 const tk=[ '<b>'+fmt.format(TOT.liq)+' L</b> el '+diaLbl(fechaMax)+' en el grupo ('+(TOT.delta>=0?'+':'−')+Math.abs(TOT.delta).toFixed(1).replace('.',',')+'%)',
@@ -803,7 +867,13 @@ const tk=[ '<b>'+fmt.format(TOT.liq)+' L</b> el '+diaLbl(fechaMax)+' en el grupo
   frescas.length===ESTS.length
     ? 'Sin faltantes · '+ESTS.length+'/'+ESTS.length+' planillas'
     : 'FALTAN: '+ESTS.filter(e=>!e.fresca).map(e=>e.nombre).join(', '), ]
-  .concat(ESTS.slice().sort((a,b)=>b.delta-a.delta).slice(0,3).map(e=>e.nombre+' <b>'+fmt.format(e.liq)+' L</b> ('+(e.delta>=0?'+':'−')+Math.abs(e.delta).toFixed(1).replace('.',',')+'%)'))
+  // El top 3 sale del ULTIMO dia de cada estacion, que no siempre es el dia
+  // del resto del panel: una atrasada entraba mezclada con las de hoy y sin
+  // ninguna fecha. Ahora la que no esta al dia se muestra fechada, y la que no
+  // cargo nada no compite.
+  .concat(ESTS.filter(e=>!e.sinDatos).sort((a,b)=>b.delta-a.delta).slice(0,3)
+    .map(e=>e.nombre+' <b>'+fmt.format(e.liq)+' L</b> ('+(e.delta>=0?'+':'−')+
+      Math.abs(e.delta).toFixed(1).replace('.',',')+'%'+(e.fresca?'':' · '+diaLbl(e.ult.fecha))+')'))
   .concat(NOTAS.slice(0,3).map(n=>esc(n.fu)+': '+esc(n.t)));
 const cinta = tk.map(t=>'<span class="it"><span class="d"></span><span>'+t+'</span></span>').join('');
 $('#cinta').innerHTML = cinta + cinta;   /* duplicada para el loop continuo */
