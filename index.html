@@ -539,7 +539,8 @@ function fichaEst(e){
     '<div class="litros">'+fmt.format(e.liq)+' <small>L · '+diaLbl(e.ult.fecha)+'</small></div>'+
     '<figure class="spark">'+spark(e.serie)+'<figcaption>Litros por día · '+mesAct+'</figcaption></figure>'+
     '<div class="cmp">'+deltaTxt(e.delta)+'</div>'+
-    '<div class="gnc">'+(e.gnc?'GNC '+fmt.format(e.gnc)+' m³':'Sin GNC')+'</div></div>';
+    '<div class="gnc">'+(e.gnc ? 'GNC '+fmt.format(e.gnc)+' m³'
+      : e.tieneGnc ? 'GNC 0 m³ ese día' : 'Sin GNC este mes')+'</div></div>';
 }
 function proyCard(acum, nCon, prevTot, quien){
   if(!nCon)return '';
@@ -587,7 +588,7 @@ function vGeneral(){
   <div class="card"><h2>Comparativa · ${diaLbl(fechaMax)}</h2><div class="baj">Litros por estación</div>
     ${rank.map(e=>'<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'"><span class="n">'+e.nombre+'</span>'+
       '<span class="pista"><span class="barra" style="width:'+(e.enDia/(rank[0].enDia||1)*100).toFixed(1)+'%"></span></span>'+
-      '<span class="v">'+(e.sinDatos?'—':fmt.format(e.enDia))+'</span></button>').join('')}</div>
+      '<span class="v">'+(e.fresca?fmt.format(e.enDia):'—')+'</span></button>').join('')}</div>
 
   <div class="card"><h2>Combustibles del día</h2><div class="baj">Litros por producto · ${diaLbl(fechaMax)} (GNC en su KPI, en m³)</div>
     ${donut(diaProdG)}</div>
