@@ -156,8 +156,12 @@
   /* El aviso de recargar() tiene que poder salir desde CUALQUIER pantalla:
      antes solo existia en las dos de error, asi que desde el panel normal
      el boton «↻ Actualizar datos» no hacia absolutamente nada sin red. */
+  /* `width:max-content` es lo que hace valer el max-width: con `left:50%` y
+     sin ancho, el espacio para el shrink-to-fit es viewport/2, asi que la
+     caja medía 195px en un telefono de 390 y un mensaje de una linea se
+     partia en cuatro. */
   #toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(64px + env(safe-area-inset-bottom));
-    z-index:60; max-width:min(92vw,420px); background:var(--warn-bg); color:var(--warn);
+    width:max-content; z-index:60; max-width:min(92vw,420px); background:var(--warn-bg); color:var(--warn);
     border:1px solid var(--warn); border-radius:10px; padding:10px 14px; font-size:14px;
     font-weight:600; text-align:center; box-shadow:0 6px 24px var(--velo); display:none}
   #toast.ver{display:block}
@@ -302,8 +306,10 @@ function olvidarId(){
    usuario toca cuando algo no anda. */
 function recargar(){
   if(sinRed()){
-    // El cajon del menu tapa el aviso si quedo abierto. `cerrarNav` vive dentro
-    // del closure de iniciar(), asi que desde aca se hace a mano.
+    // El cajon NO tapa el toast (z-index 60 contra 41, medido con
+    // elementFromPoint), pero dejarlo abierto sobre un aviso de «no se pudo
+    // actualizar» confunde. `cerrarNav` vive dentro del closure de iniciar(),
+    // asi que desde aca se cierra a mano.
     document.body.classList.remove('nav');
     const bm=document.getElementById('btnMenu');
     if(bm)bm.setAttribute('aria-expanded','false');
@@ -345,10 +351,10 @@ async function cargar(){
     // buena, y el usuario se quedaba sin el panel de ayer en la estacion.
     if(iniciar(datos)){ lsSet(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos})); return; }
     // El paquete vino sin un solo dia. Si hay copia, el panel de ayer es mejor
-    // que un cartel: se cae al rescate. Si NO hay copia, el cartel que iniciar()
-    // acaba de dibujar («Todavia no hay planillas») es el diagnostico correcto —
-    // mandarlo a «Revisa la senal» con la red perfecta era peor que antes.
-    if(!lsGet(CLAVE_CACHE)) return;
+    // que un cartel y se cae al rescate. Si NO hay copia, el rescate no hace
+    // nada y abajo se respeta el cartel que iniciar() acaba de dibujar
+    // («Todavia no hay planillas»), que es el diagnostico correcto: mandarlo a
+    // «Revisa la senal» con la red perfecta era peor que no arreglar nada.
     vacio=true;
     throw new Error('el paquete no trae ningun dia');
   }catch(err){
@@ -388,16 +394,20 @@ async function cargar(){
       // tiro fue algo posterior (el cartel de «Sin conexion»), reemplazarlo por
       // la pantalla de error es cambiar algo que funciona por algo que no.
     }
-    // `!vacio`: si el paquete vino sin un solo dia y la copia tampoco trae
-    // nada, el cartel que iniciar() acaba de dibujar («Todavia no hay
-    // planillas») es el diagnostico correcto. Taparlo con «No se pudo cargar»
-    // manda a revisar una senal que esta perfecta.
-    if(!restaurado && !vacio){
-      // El menu y la cinta pueden haber quedado escritos por un iniciar() que
-      // tiro a mitad. Con la vista general muerta, un menu vivo lleva a fichas
-      // que funcionan y a un «Vista general» que no responde nunca.
+    if(!restaurado){
+      // La limpieza va SIEMPRE que no se haya restaurado, tambien cuando el
+      // paquete vino vacio. Con `&& !vacio` quedaba desactivada justo en el
+      // unico caso donde iniciar() corre DOS veces: la segunda corrida repone
+      // el menu y la cinta y despues tira, y el usuario leia «ninguna estacion
+      // cargo nada» con un menu al lado listando las seis con sus litros.
       const nv=document.getElementById('navEst'); if(nv)nv.innerHTML='';
       const ci=document.getElementById('cinta'); if(ci)ci.innerHTML='';
+      const bm=document.getElementById('btnMenu'); if(bm)bm.style.display='none';
+      const tk=document.querySelector('.ticker'); if(tk)tk.style.display='none';
+      // Lo unico condicional es el CARTEL: si el paquete vino vacio, el que
+      // dibujo iniciar() ya dice la verdad y taparlo manda a revisar una senal
+      // que esta perfecta.
+      if(!vacio){
       pantalla('<div class="card"><h2>No se pudo cargar</h2><div class="baj">'+
         (lsRoto?'Este navegador no deja guardar datos (modo privado o cookies bloqueadas), '+
                 'así que no hay copia local para mostrar. '
@@ -405,6 +415,7 @@ async function cargar(){
         '</div><button class="chip act" onclick="recargar()">Reintentar</button>'+
         '<button class="chip" style="margin-left:8px" onclick="olvidarId()">Usar otro código</button>'+
         '<div id="avisoRecarga" class="baj" style="color:var(--warn);min-height:1.2em"></div></div>');
+      }
     }
   }
 }
@@ -417,7 +428,9 @@ document.addEventListener('visibilitychange',()=>{
   // navegador no tiene el HTML cacheado y muestra su propia pantalla de error.
   // Es el escenario declarado como mas comun — mirar el panel parado en la
   // estacion — asi que sin red se deja lo que ya esta en pantalla.
-  if(typeof navigator!=='undefined' && navigator.onLine===false)return;
+  // Va por sinRed() y no por una copia del predicado: este es el UNICO reload
+  // que dispara solo, sin que el usuario toque nada.
+  if(sinRed())return;
   // Y si esta tipeando el codigo, recargar se lo borra.
   const inp=document.getElementById('inId');
   if(inp && (inp.value||'').trim())return;

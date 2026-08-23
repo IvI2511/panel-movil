@@ -10,13 +10,28 @@ function elemento(nombre) {
   const el = {
     _nombre: nombre, innerHTML: '', textContent: '', className: '', value: '',
     style: {}, dataset: {},
-    classList: {add() {}, remove() {}, toggle() {}, contains: () => false},
+    // Las clases se siguen de verdad: el toast se muestra agregando `.ver`,
+    // y con un classList de mentira eso no se podia medir.
+    classList: {
+      _c: new Set(),
+      add(c) { this._c.add(c); },
+      remove(c) { this._c.delete(c); },
+      toggle(c, f) { if (f === undefined) f = !this._c.has(c);
+                     if (f) this._c.add(c); else this._c.delete(c); },
+      contains(c) { return this._c.has(c); },
+    },
     addEventListener() {}, removeEventListener() {},
     setAttribute() {}, getAttribute: () => null,
     // prepend() era un no-op, y con el la banda de «Sin conexión» no llegaba
     // nunca: cualquier check sobre ella pasaba sin mirar nada. Ahora antepone
     // el HTML, que es lo que los tests leen.
-    prepend(hijo) { el.innerHTML = ((hijo && hijo.innerHTML) || '') + el.innerHTML; },
+    prepend(hijo) {
+      // Se conserva la CLASE del nodo: prependiendo solo su innerHTML se perdia
+      // el <div class="banda">, y un mutante que borrara esa clase sobrevivia.
+      if (!hijo) return;
+      const cls = hijo.className ? ' class="' + hijo.className + '"' : '';
+      el.innerHTML = '<div' + cls + '>' + (hijo.innerHTML || '') + '</div>' + el.innerHTML;
+    },
     append() {}, appendChild() {}, remove() {},
     closest: () => null,
     querySelector: () => elemento(nombre + ' >'),
@@ -27,7 +42,8 @@ function elemento(nombre) {
 }
 
 function crearEntorno({localStorage = new Map(), fetch, hash = '',
-                       romperStorage = false, enLinea = true} = {}) {
+                       romperStorage = false, enLinea = true,
+                       idsEstaticos = []} = {}) {
   const reg = new Map();
   const listeners = {};   // tipo -> [fn]
   // En el HTML real `.wrap` y `#vista` son EL MISMO nodo
@@ -43,7 +59,15 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
   const document = {
     querySelector: dame,
     querySelectorAll: () => [],
-    getElementById: id => dame('#' + id),
+    // Un id EXISTE si esta en el markup estatico o si alguna pantalla ya lo
+    // escribio. Devolver siempre un elemento hacia que `avisar()` tomara
+    // siempre la rama de #avisoRecarga y el toast quedara sin cobertura.
+    getElementById(id) {
+      if (idsEstaticos.indexOf(id) >= 0 || reg.has('#' + id)) return dame('#' + id);
+      const escrito = [...reg.values()].some(
+        e => String(e.innerHTML).indexOf('id="' + id + '"') >= 0);
+      return escrito ? dame('#' + id) : null;
+    },
     createElement: t => elemento('<' + t + '>'),
     addEventListener(tipo, fn) { (listeners[tipo] = listeners[tipo] || []).push(fn); },
     body: elemento('body'),
@@ -83,9 +107,12 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
   return {
     ventana, document, location, listeners,
     /** El innerHTML que quedo escrito en un selector (o '' si nadie lo toco). */
-    html: sel => (reg.has(sel) ? reg.get(sel).innerHTML : ''),
+    // Pasan por dame() para que el ALIAS valga tambien aca: si no, un
+    // env.html('.wrap') devuelve '' en silencio y cualquier asercion negativa
+    // sobre el pasa sola.
+    html: sel => dame(sel).innerHTML,
     /** El objeto style de un selector, para verificar que algo se escondio. */
-    estilo: sel => (reg.has(sel) ? reg.get(sel).style : {}),
+    estilo: sel => dame(sel).style,
     texto: sel => (reg.has(sel) ? reg.get(sel).textContent : ''),
     /** Dispara los listeners registrados de un tipo (p.ej. 'hashchange'). */
     disparar(tipo) { (listeners[tipo] || []).forEach(fn => fn({})); },
