@@ -65,6 +65,8 @@ function crearEntorno({localStorage = new Map(), fetch, hash = ''} = {}) {
     ventana, document, location, listeners,
     /** El innerHTML que quedo escrito en un selector (o '' si nadie lo toco). */
     html: sel => (reg.has(sel) ? reg.get(sel).innerHTML : ''),
+    /** El objeto style de un selector, para verificar que algo se escondio. */
+    estilo: sel => (reg.has(sel) ? reg.get(sel).style : {}),
     texto: sel => (reg.has(sel) ? reg.get(sel).textContent : ''),
     /** Dispara los listeners registrados de un tipo (p.ej. 'hashchange'). */
     disparar(tipo) { (listeners[tipo] || []).forEach(fn => fn({})); },

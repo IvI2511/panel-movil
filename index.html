@@ -256,8 +256,13 @@ async function cargar(){
     const r=await fetch('https://gist.githubusercontent.com/IvI2511/'+id+'/raw/panel_movil.json?t='+Date.now(),{cache:'no-store'});
     if(!r.ok)throw new Error('HTTP '+r.status);
     const datos=await r.json();
-    try{localStorage.setItem(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos}));}catch(e){}
+    // Primero dibujar, DESPUES guardar. Al reves, un paquete nuevo con una
+    // fila rota pisaba la copia buena, iniciar() tiraba, y el rescate iba a
+    // buscar la copia y encontraba la que se acababa de envenenar — y la
+    // borraba. El usuario se quedaba sin panel Y sin respaldo hasta que
+    // alguien arreglara el JSON del otro repo.
     iniciar(datos);
+    try{localStorage.setItem(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos}));}catch(e){}
   }catch(err){
     // Este es el camino del caso mas comun y esperado: quedarse sin senal en
     // la estacion. Era el unico de todo el archivo sin manejo de error atras:
@@ -341,7 +346,17 @@ function notaHTML(n){
    extremo de "falta", no una estacion que no existe. Filtrarla hacia que el
    panel dijera "Sin faltantes - 5/5" siendo 6 estaciones. Todo lo que dibuja
    consulta `sinDatos` antes de ir a buscar un ultimo dia que no existe. */
-const ESTS = DATA.estaciones.map(e => {
+const ESTS = (DATA.estaciones||[]).map(e0 => {
+  // El JSON lo arma OTRO repo, que se publica por separado. Una clave que
+  // falte no puede voltear el panel de las seis estaciones: sin `dias` la
+  // estacion cae sola en el camino `sinDatos`, que ya existe y funciona.
+  // El nombre se escapa UNA vez, aca: sale en once lugares distintos y
+  // escaparlo en cada uno es una invitacion a olvidarse de uno.
+  // La clave no se escapa, se RESTRINGE: ademas de ir a un atributo
+  // (data-ruta) viaja al hash de navegacion, y ahi escapar no alcanza.
+  const e = {...e0, dias: e0.dias||[], prev: e0.prev||[],
+             nombre: esc(e0.nombre||''),
+             clave: String(e0.clave||'').replace(/[^a-z0-9_-]/gi,'')};
   const serie = e.dias.map(d=>d.liq||0);
   const ult = e.dias[e.dias.length-1]||{};
   const prom = serie.length ? suma(serie)/serie.length : 0;
@@ -361,9 +376,14 @@ const FECHAS = [...new Set(ESTS.flatMap(e=>e.dias.map(d=>d.fecha)))].sort();
 // Si NINGUNA estacion cargo un solo dia no hay fechaMax, y todo lo de abajo
 // (titulos, proyeccion, graficos) sale de ahi. Se avisa y se corta.
 if(!FECHAS.length){
-  pantalla('<div class="card"><h2>Todavia no hay planillas</h2><div class="baj">'+
-    'Ninguna de las '+ESTS.length+' estaciones cargo un dia de este mes. '+
-    'Los datos entran solos con la publicacion de la manana.</div>'+
+  // Este `return` sale antes de cablear el menu, el velo y el Escape, asi que
+  // la hamburguesa quedaba en pantalla sin hacer nada. En un celular un boton
+  // que no responde se lee como "la app se colgo": mejor no mostrarlo.
+  $('#btnMenu').style.display='none';
+  pantalla('<div class="card"><h2>Todavía no hay planillas</h2><div class="baj">'+
+    (ESTS.length ? 'Ninguna de las '+ESTS.length+' estaciones cargó un día de este mes. '
+                 : 'El paquete no trae ninguna estación. ')+
+    'Los datos entran solos con la publicación de la mañana.</div>'+
     '<button class="chip act" onclick="location.reload()">Reintentar</button></div>');
   return;
 }
@@ -376,10 +396,16 @@ ESTS.forEach(e=>{
 const frescas = ESTS.filter(e=>e.fresca);
 // Los KPIs del dia suman SOLO el ultimo dia real (fechaMax): una estacion que
 // no mando su planilla aporta 0 y la banda la nombra, en vez de mezclar dias.
+// El promedio va SOLO sobre las que aportaron ESTE dia. El numerador suma el
+// dia mas nuevo, asi que una estacion atrasada pone 0 arriba; si abajo sigue
+// contando su promedio del mes, la planilla que falta se lee como caida de
+// ventas. Medido sobre los fixtures: los litros decian ↓10,6% un dia en que
+// las estaciones que si cargaron habian subido +8,1% — el signo al reves, en
+// el numero que mas se mira del panel.
 const TOT = {
   liq: suma(ESTS.map(e=>e.enDia)), gnc: suma(ESTS.map(e=>e.gncDia)),
-  fact: suma(ESTS.map(e=>e.factDia)), prom: suma(ESTS.map(e=>e.prom)),
-  gncProm: suma(ESTS.map(e=>e.gncProm))};
+  fact: suma(ESTS.map(e=>e.factDia)), prom: suma(frescas.map(e=>e.prom)),
+  gncProm: suma(frescas.map(e=>e.gncProm))};
 TOT.delta = TOT.prom ? (TOT.liq-TOT.prom)/TOT.prom*100 : 0;
 // Mismo criterio que los litros: el dia contra el dia promedio de ESTE mes.
 TOT.gncDelta = TOT.gncProm ? (TOT.gnc-TOT.gncProm)/TOT.gncProm*100 : null;
@@ -394,7 +420,7 @@ const grupoPrev = (()=>{ // julio, dia a dia (hasta 31)
   return Object.keys(dias).sort().map(f=>({fecha:f, liq:dias[f]}));
 })();
 const hora = (DATA.generado||'').slice(11,16);
-$('#cuando').innerHTML = 'Datos del <b>'+diaLbl(fechaMax)+'</b><br>publ. '+hora+' · '+esc(DATA.publicado_por);
+$('#cuando').innerHTML = 'Datos del <b>'+diaLbl(fechaMax)+'</b><br>publ. '+esc(hora)+' · '+esc(DATA.publicado_por);
 
 function bandaHTML(){
   if(frescas.length===ESTS.length)
@@ -710,7 +736,7 @@ function vEstacion(clave){
   if((e.tanques||[]).length){
     tanquesHtml = '<div class="card"><h2>Despacho por tanque · '+diaLbl(e.ult.fecha)+'</h2>'+
       '<div style="overflow-x:auto"><table><tr><th>Tq</th><th>Producto</th><th>Venta L</th><th>Varilla L</th><th>Camión L</th></tr>'+
-      e.tanques.map(t=>'<tr><td>'+(t.tk??'')+'</td><td>'+esc(t.prod||'')+'</td><td>'+fmt.format(t.venta||0)+
+      e.tanques.map(t=>'<tr><td>'+esc(t.tk??'')+'</td><td>'+esc(t.prod||'')+'</td><td>'+fmt.format(t.venta||0)+
         '</td><td>'+fmt.format(t.med||0)+'</td><td>'+(t.cam?fmt.format(t.cam):'—')+'</td></tr>').join('')+
       '</table></div></div>';
   }
