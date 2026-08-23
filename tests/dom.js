@@ -22,7 +22,8 @@ function elemento(nombre) {
   return el;
 }
 
-function crearEntorno({localStorage = new Map(), fetch, hash = '', romperStorage = false} = {}) {
+function crearEntorno({localStorage = new Map(), fetch, hash = '',
+                       romperStorage = false, enLinea = true} = {}) {
   const reg = new Map();
   const listeners = {};   // tipo -> [fn]
   const dame = sel => {
@@ -40,7 +41,10 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '', romperStorage
     documentElement: elemento('html'),
   };
 
-  const location = {hash, reload() {}, href: 'http://localhost/'};
+  // Se cuentan las recargas: sin service worker, recargar sin red se lleva
+  // puesta la app, asi que "no recargo" es una propiedad que hay que medir.
+  const location = {hash, recargas: 0, reload() { this.recargas++; },
+                    href: 'http://localhost/'};
 
   const ventana = {
     document, location,
@@ -61,7 +65,8 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '', romperStorage
     console, Intl, Date, Math, JSON, Number, String, Array, Object, Set, Map,
     setTimeout, clearTimeout, setInterval, clearInterval,
     // lo que el panel lee de si mismo
-    navigator: {userAgent: 'node'},
+    // `onLine` decide si los botones de recargar pueden recargar.
+    navigator: {userAgent: 'node', onLine: enLinea},
   };
   ventana.window = ventana;
   ventana.globalThis = ventana;
