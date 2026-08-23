@@ -22,7 +22,7 @@ function elemento(nombre) {
   return el;
 }
 
-function crearEntorno({localStorage = new Map(), fetch, hash = ''} = {}) {
+function crearEntorno({localStorage = new Map(), fetch, hash = '', romperStorage = false} = {}) {
   const reg = new Map();
   const listeners = {};   // tipo -> [fn]
   const dame = sel => {
@@ -47,10 +47,15 @@ function crearEntorno({localStorage = new Map(), fetch, hash = ''} = {}) {
     history: {replaceState(_a, _b, h) { if (h) location.hash = h; }},
     scrollTo() {},
     addEventListener(tipo, fn) { (listeners[tipo] = listeners[tipo] || []).push(fn); },
+    // `romperStorage` simula Safari en modo privado o la cuota llena: cualquier
+    // acceso tira. Es un caso real y el panel no puede quedarse en blanco.
     localStorage: {
-      getItem: k => (localStorage.has(k) ? localStorage.get(k) : null),
-      setItem: (k, v) => localStorage.set(k, String(v)),
-      removeItem: k => localStorage.delete(k),
+      getItem: k => { if (romperStorage) throw new Error('SecurityError');
+                      return localStorage.has(k) ? localStorage.get(k) : null; },
+      setItem: (k, v) => { if (romperStorage) throw new Error('QuotaExceededError');
+                           localStorage.set(k, String(v)); },
+      removeItem: k => { if (romperStorage) throw new Error('SecurityError');
+                         localStorage.delete(k); },
     },
     fetch: fetch || (() => Promise.reject(new Error('sin red en los tests'))),
     console, Intl, Date, Math, JSON, Number, String, Array, Object, Set, Map,

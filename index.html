@@ -233,21 +233,45 @@
    una sola vez en el #fragmento del link compartido (el navegador nunca lo
    manda a ningun servidor), se guarda en el telefono y listo. */
 const CLAVE_ID='ce_gist', CLAVE_CACHE='ce_cache';
-function gistDeHash(){const m=(location.hash||'').match(/^#([0-9a-f]{20,40})$/); return m?m[1]:null;}
+/* En Safari en modo privado, con las cookies bloqueadas, o con la cuota llena,
+   CUALQUIER acceso a localStorage tira. Y pasaba ANTES de escribir siquiera
+   «Cargando los datos…», asi que la pantalla quedaba en blanco: sin un texto y
+   sin un boton. Estos tres envoltorios no tiran nunca; `lsRoto` se prende para
+   poder decirselo al usuario en vez de dejarlo mirando la nada. */
+let lsRoto=false;
+function lsGet(k){try{return localStorage.getItem(k);}catch(e){lsRoto=true; return null;}}
+function lsSet(k,v){try{localStorage.setItem(k,v); return true;}catch(e){lsRoto=true; return false;}}
+function lsDel(k){try{localStorage.removeItem(k);}catch(e){lsRoto=true;}}
+/* El id del gist es hexadecimal. La `i` esta porque el teclado del celular
+   autocapitaliza, y un codigo retipeado a mano llegaba en mayusculas. */
+function gistDeHash(){const m=(location.hash||'').match(/^#([0-9a-fA-F]{20,40})$/); return m?m[1].toLowerCase():null;}
 function pantalla(html){document.getElementById('vista').innerHTML=html;}
+function avisoId(txt){const e=document.getElementById('avisoId'); if(e)e.textContent=txt;}
 function guardarId(){
-  const v=((document.getElementById('inId')||{}).value||'').match(/[0-9a-f]{20,40}/);
-  if(v){localStorage.setItem(CLAVE_ID,v[0]); location.reload();}
+  const crudo=((document.getElementById('inId')||{}).value||'').trim();
+  const v=crudo.match(/[0-9a-fA-F]{20,40}/);
+  // Antes era `if(v){...}` sin else: con una entrada invalida el boton no hacia
+  // absolutamente nada. Ni guardaba, ni avisaba, ni movia un pixel.
+  if(!v){avisoId(crudo?'Ese código no parece válido: son entre 20 y 40 letras y números.'
+                      :'Pegá el código que viene después del # en el link.'); return;}
+  if(!lsSet(CLAVE_ID,v[0].toLowerCase())){
+    avisoId('Este navegador no deja guardar datos. Probá sin modo privado.'); return;}
+  location.reload();
 }
+function olvidarId(){lsDel(CLAVE_ID); lsDel(CLAVE_CACHE); location.reload();}
 async function cargar(){
   const nuevo=gistDeHash();
-  if(nuevo){localStorage.setItem(CLAVE_ID,nuevo); history.replaceState(null,'','#general');}
-  const id=localStorage.getItem(CLAVE_ID);
+  if(nuevo){lsSet(CLAVE_ID,nuevo); history.replaceState(null,'','#general');}
+  // Si el storage no anda, el codigo del link igual sirve para esta sesion.
+  const id=nuevo||lsGet(CLAVE_ID);
   if(!id){
     pantalla('<div class="card"><h2>Falta el código</h2><div class="baj">Abrí esta página desde el '+
       'link que te compartieron (trae el código después del #). Si tenés el código a mano, pegalo acá:</div>'+
       '<input id="inId" autocomplete="off" style="width:100%;padding:10px;border:1px solid var(--line);'+
       'border-radius:10px;background:var(--surf1);color:var(--txt);font:inherit" placeholder="código">'+
+      '<div id="avisoId" class="baj" style="color:var(--warn);min-height:1.2em"></div>'+
+      (lsRoto?'<div class="baj" style="color:var(--warn)">Este navegador no deja guardar datos '+
+              '(modo privado o cookies bloqueadas): vas a tener que pegar el código cada vez.</div>':'')+
       '<button class="chip act" style="margin-top:10px" onclick="guardarId()">Guardar</button></div>');
     return;
   }
@@ -261,8 +285,11 @@ async function cargar(){
     // buscar la copia y encontraba la que se acababa de envenenar — y la
     // borraba. El usuario se quedaba sin panel Y sin respaldo hasta que
     // alguien arreglara el JSON del otro repo.
-    iniciar(datos);
-    try{localStorage.setItem(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos}));}catch(e){}
+    // Se guarda RECIEN si iniciar() dibujo un panel de verdad. Un paquete
+    // vacio no tira: cae en la guarda de «no hay planillas» y vuelve normal,
+    // asi que con un simple «dibujar y despues guardar» igual pisaba la copia
+    // buena, y el usuario se quedaba sin el panel de ayer en la estacion.
+    if(iniciar(datos)) lsSet(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos}));
   }catch(err){
     // Este es el camino del caso mas comun y esperado: quedarse sin senal en
     // la estacion. Era el unico de todo el archivo sin manejo de error atras:
@@ -270,7 +297,7 @@ async function cargar(){
     // viejo, el JSON.parse o el iniciar() tiran una excepcion que nace ADENTRO
     // del catch, no la agarra nadie, y la pantalla queda en "Cargando los
     // datos..." para siempre, sin reintentar y sin avisar.
-    const c=localStorage.getItem(CLAVE_CACHE);
+    const c=lsGet(CLAVE_CACHE);
     let restaurado=false;
     try{
     if(c){
@@ -287,20 +314,40 @@ async function cargar(){
     }catch(err2){
       // La copia no sirve. Se tira, asi el proximo arranque no vuelve a
       // tropezar con la misma piedra, y se cae a la pantalla de error.
-      try{localStorage.removeItem(CLAVE_CACHE);}catch(err3){}
-      restaurado=false;
+      lsDel(CLAVE_CACHE);
+      // Ojo: NO se pisa `restaurado`. Si iniciar() ya dibujo el panel y lo que
+      // tiro fue algo posterior (el cartel de «Sin conexion»), reemplazarlo por
+      // la pantalla de error es cambiar algo que funciona por algo que no.
     }
     if(!restaurado){
-      pantalla('<div class="card"><h2>No se pudo cargar</h2><div class="baj">Revisá la señal y probá de nuevo.</div>'+
-        '<button class="chip act" onclick="location.reload()">Reintentar</button></div>');
+      // El menu y la cinta pueden haber quedado escritos por un iniciar() que
+      // tiro a mitad. Con la vista general muerta, un menu vivo lleva a fichas
+      // que funcionan y a un «Vista general» que no responde nunca.
+      const nv=document.getElementById('navEst'); if(nv)nv.innerHTML='';
+      const ci=document.getElementById('cinta'); if(ci)ci.innerHTML='';
+      pantalla('<div class="card"><h2>No se pudo cargar</h2><div class="baj">'+
+        (lsRoto?'Este navegador no deja guardar datos (modo privado o cookies bloqueadas), '+
+                'así que no hay copia local para mostrar. '
+              :'Revisá la señal y probá de nuevo. Si la señal está bien, puede que el código no sirva.')+
+        '</div><button class="chip act" onclick="location.reload()">Reintentar</button>'+
+        '<button class="chip" style="margin-left:8px" onclick="olvidarId()">Usar otro código</button></div>');
     }
   }
 }
 /* al volver a la app despues de un rato, refrescar solo */
 let _oculto=0;
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden)_oculto=Date.now();
-  else if(_oculto && Date.now()-_oculto>10*60*1000)location.reload();
+  if(document.hidden){_oculto=Date.now(); return;}
+  if(!(_oculto && Date.now()-_oculto>10*60*1000))return;
+  // Sin service worker, un reload sin senal se lleva puesta la app entera: el
+  // navegador no tiene el HTML cacheado y muestra su propia pantalla de error.
+  // Es el escenario declarado como mas comun — mirar el panel parado en la
+  // estacion — asi que sin red se deja lo que ya esta en pantalla.
+  if(typeof navigator!=='undefined' && navigator.onLine===false)return;
+  // Y si esta tipeando el codigo, recargar se lo borra.
+  const inp=document.getElementById('inId');
+  if(inp && (inp.value||'').trim())return;
+  location.reload();
 });
 
 function iniciar(DATA){
@@ -385,7 +432,7 @@ if(!FECHAS.length){
                  : 'El paquete no trae ninguna estación. ')+
     'Los datos entran solos con la publicación de la mañana.</div>'+
     '<button class="chip act" onclick="location.reload()">Reintentar</button></div>');
-  return;
+  return false;
 }
 const fechaMax = FECHAS[FECHAS.length-1];
 ESTS.forEach(e=>{
@@ -416,7 +463,12 @@ const estPrev = ESTS.find(e=>e.prev.length);
 const mesPrev = estPrev ? MESN[Number(estPrev.prev[0].fecha.slice(5,7))-1] : 'mes pasado';
 const grupoDia = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).liq||0)));
 const grupoPrev = (()=>{ // julio, dia a dia (hasta 31)
-  const dias = {}; ESTS.forEach(e=>e.prev.forEach(d=>{dias[d.fecha]=(dias[d.fecha]||0)+d.liq;}));
+  // SOLO las que aportaron algo este mes. Si no, el numerador (agosto) tiene
+  // cinco estaciones y el denominador (julio) tiene seis: la que no cargo nada
+  // suma su julio entero y la proyeccion se da vuelta. Medido sobre los
+  // fixtures: pasaba de ↑7,3% a ↓5,9%, y la linea de «media de julio» saltaba
+  // de estar abajo de todas las barras a estar arriba de casi todas.
+  const dias = {}; ESTS.filter(e=>!e.sinDatos).forEach(e=>e.prev.forEach(d=>{dias[d.fecha]=(dias[d.fecha]||0)+d.liq;}));
   return Object.keys(dias).sort().map(f=>({fecha:f, liq:dias[f]}));
 })();
 const hora = (DATA.generado||'').slice(11,16);
@@ -906,6 +958,7 @@ const cinta = tk.map(t=>'<span class="it"><span class="d"></span><span>'+t+'</sp
 $('#cinta').innerHTML = cinta + cinta;   /* duplicada para el loop continuo */
 
 render();
+return true;
 }
 cargar();
 </script>
