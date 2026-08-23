@@ -64,8 +64,12 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
     // siempre la rama de #avisoRecarga y el toast quedara sin cobertura.
     getElementById(id) {
       if (idsEstaticos.indexOf(id) >= 0 || reg.has('#' + id)) return dame('#' + id);
-      const escrito = [...reg.values()].some(
-        e => String(e.innerHTML).indexOf('id="' + id + '"') >= 0);
+      // El id tiene que aparecer DENTRO de una etiqueta. Con un indexOf pelado,
+      // un titular de noticia que contenga id="avisoRecarga" hacia "existir"
+      // ese elemento: esc() no escapa la comilla, asi que el texto llega crudo
+      // al innerHTML. Inofensivo en el navegador, veneno para el instrumento.
+      const dentroDeTag = new RegExp('<[^<>]*\\bid="' + id + '"');
+      const escrito = [...reg.values()].some(e => dentroDeTag.test(String(e.innerHTML)));
       return escrito ? dame('#' + id) : null;
     },
     createElement: t => elemento('<' + t + '>'),
@@ -107,12 +111,14 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
   return {
     ventana, document, location, listeners,
     /** El innerHTML que quedo escrito en un selector (o '' si nadie lo toco). */
-    // Pasan por dame() para que el ALIAS valga tambien aca: si no, un
-    // env.html('.wrap') devuelve '' en silencio y cualquier asercion negativa
-    // sobre el pasa sola.
-    html: sel => dame(sel).innerHTML,
+    // Observadores PUROS: aplican el ALIAS pero NO registran el selector.
+    // Pasando por dame(), leer era escribir: un env.html('#avisoRecarga')
+    // —una asercion negativa perfectamente razonable— hacia existir ese id y
+    // apagaba el toast en Node mientras el navegador no cambiaba. El proximo
+    // que escriba ese check iba a "encontrar" un bug que no existe.
+    html(sel) { const k = ALIAS[sel] || sel; return reg.has(k) ? reg.get(k).innerHTML : ''; },
     /** El objeto style de un selector, para verificar que algo se escondio. */
-    estilo: sel => dame(sel).style,
+    estilo(sel) { const k = ALIAS[sel] || sel; return reg.has(k) ? reg.get(k).style : {}; },
     texto: sel => (reg.has(sel) ? reg.get(sel).textContent : ''),
     /** Dispara los listeners registrados de un tipo (p.ej. 'hashchange'). */
     disparar(tipo) { (listeners[tipo] || []).forEach(fn => fn({})); },
