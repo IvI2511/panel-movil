@@ -135,7 +135,10 @@
   .tarjetas{display:flex; flex-direction:column; gap:10px}
   .est{background:var(--surf); border:1px solid var(--line); border-radius:15px; padding:13px 14px;
     display:grid; grid-template-columns:1fr 118px; gap:2px 10px; cursor:pointer; -webkit-tap-highlight-color:transparent}
-  .est .cab{grid-column:1/3; display:flex; align-items:center; gap:8px}
+  /* 1/-1 en vez de 1/3: con `1/3` la cabecera FUERZA una segunda columna
+     implicita, asi que la ficha sin sparkline seguia partida en dos aunque
+     .est.vacia declarara una sola. En la grilla normal significan lo mismo. */
+  .est .cab{grid-column:1/-1; display:flex; align-items:center; gap:8px}
   .est .sem{width:9px; height:9px; border-radius:50%; background:var(--ok); flex:none}
   .est .nom{font-size:16px; font-weight:700}
   .est .enc{margin-left:auto; font-size:11.5px; color:var(--txt2); background:var(--surf1); border-radius:99px; padding:3px 9px; font-weight:600}
@@ -146,6 +149,10 @@
   .est .spark figcaption{font-size:10px; color:var(--txt3); text-align:right; margin-top:2px}
   .est svg{display:block; width:118px; height:40px}
   .notas{background:var(--surf); border:1px solid var(--line); border-radius:13px; padding:6px 14px}
+  /* La ficha sin planillas no tiene sparkline, asi que la segunda columna de
+     118px la dejaba apretada contra el borde y la tarjeta medía 87px contra
+     163 de las demas. Sin esa columna se acomoda sola. */
+  .est.vacia{grid-template-columns:1fr}
   .nota{display:block; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; line-height:1.35}
   a.nota{color:inherit; text-decoration:none}
   a.nota:active{background:var(--acc-soft)}
@@ -427,6 +434,9 @@ if(!FECHAS.length){
   // la hamburguesa quedaba en pantalla sin hacer nada. En un celular un boton
   // que no responde se lee como "la app se colgo": mejor no mostrarlo.
   $('#btnMenu').style.display='none';
+  // La cinta se arma al final de iniciar(), despues de este return: quedaba
+  // dibujada y vacia, una franja negra al pie sin nada adentro.
+  const tk=$('.ticker'); if(tk)tk.style.display='none';
   pantalla('<div class="card"><h2>Todavía no hay planillas</h2><div class="baj">'+
     (ESTS.length ? 'Ninguna de las '+ESTS.length+' estaciones cargó un día de este mes. '
                  : 'El paquete no trae ninguna estación. ')+
@@ -607,7 +617,7 @@ function fichaEst(e){
   // Sin una sola fila del mes no hay ultimo dia, ni sparkline, ni delta: la
   // ficha dice eso mismo en vez de desaparecer o inventar ceros.
   if(e.sinDatos)
-    return '<div class="est" tabindex="0" role="button" data-ruta="#est/'+e.clave+'">'+
+    return '<div class="est vacia" tabindex="0" role="button" data-ruta="#est/'+e.clave+'">'+
       '<div class="cab"><span class="sem" style="background:var(--warn)"></span>'+
       '<span class="nom">'+e.nombre+'</span></div>'+
       '<div class="litros" style="color:var(--txt3)">—</div>'+
@@ -665,7 +675,10 @@ function vGeneral(){
 
   <div class="card"><h2>Comparativa · ${diaLbl(fechaMax)}</h2><div class="baj">Litros por estación</div>
     ${rank.map(e=>'<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'"><span class="n">'+e.nombre+'</span>'+
-      '<span class="pista"><span class="barra" style="width:'+(e.enDia/(rank[0].enDia||1)*100).toFixed(1)+'%"></span></span>'+
+      '<span class="pista"><span class="barra" style="width:'+(e.fresca?(e.enDia/(rank[0].enDia||1)*100).toFixed(1):'0')+'%'+
+      // .barra tiene min-width:3px: con "0" la barrita era coherente, pero al
+      // lado de un "—" (no hubo medicion) queda un munon que afirma algo.
+      (e.fresca?'':';min-width:0')+'"></span></span>'+
       '<span class="v">'+(e.fresca?fmt.format(e.enDia):'—')+'</span></button>').join('')}</div>
 
   <div class="card"><h2>Combustibles del día</h2><div class="baj">Litros por producto · ${diaLbl(fechaMax)} (GNC en su KPI, en m³)</div>
@@ -937,7 +950,10 @@ document.addEventListener('keydown',e=>{
 window.addEventListener('hashchange',render);
 
 $('#navEst').innerHTML = ESTS.map(e=>
-  '<button class="navit" data-ruta="#est/'+e.clave+'"><span class="pt"></span><span>'+e.nombre+'</span><small>'+
+  '<button class="navit" data-ruta="#est/'+e.clave+'"><span class="pt"'+
+  // El punto es verde fijo por CSS: la que no cargo nada quedaba marcada como
+  // al dia justo en el menu, mientras la banda y la ficha la daban por faltante.
+  (e.sinDatos?' style="background:var(--warn)"':'')+'></span><span>'+e.nombre+'</span><small>'+
   (e.sinDatos?'sin planillas':kf(e.liq)+' L')+'</small></button>').join('');
 
 /* ticker inferior */
