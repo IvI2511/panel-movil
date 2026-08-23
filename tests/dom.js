@@ -13,7 +13,11 @@ function elemento(nombre) {
     classList: {add() {}, remove() {}, toggle() {}, contains: () => false},
     addEventListener() {}, removeEventListener() {},
     setAttribute() {}, getAttribute: () => null,
-    prepend() {}, append() {}, appendChild() {}, remove() {},
+    // prepend() era un no-op, y con el la banda de «Sin conexión» no llegaba
+    // nunca: cualquier check sobre ella pasaba sin mirar nada. Ahora antepone
+    // el HTML, que es lo que los tests leen.
+    prepend(hijo) { el.innerHTML = ((hijo && hijo.innerHTML) || '') + el.innerHTML; },
+    append() {}, appendChild() {}, remove() {},
     closest: () => null,
     querySelector: () => elemento(nombre + ' >'),
     querySelectorAll: () => [],
@@ -26,7 +30,12 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
                        romperStorage = false, enLinea = true} = {}) {
   const reg = new Map();
   const listeners = {};   // tipo -> [fn]
-  const dame = sel => {
+  // En el HTML real `.wrap` y `#vista` son EL MISMO nodo
+  // (<main class="wrap" id="vista">). Sin este alias el shim los trataba como
+  // dos elementos distintos y todo lo que se inserta por `.wrap` desaparecia.
+  const ALIAS = {'.wrap': '#vista'};
+  const dame = sel0 => {
+    const sel = ALIAS[sel0] || sel0;
     if (!reg.has(sel)) reg.set(sel, elemento(sel));
     return reg.get(sel);
   };

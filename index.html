@@ -153,6 +153,14 @@
      118px la dejaba apretada contra el borde y la tarjeta medía 87px contra
      163 de las demas. Sin esa columna se acomoda sola. */
   .est.vacia{grid-template-columns:1fr}
+  /* El aviso de recargar() tiene que poder salir desde CUALQUIER pantalla:
+     antes solo existia en las dos de error, asi que desde el panel normal
+     el boton «↻ Actualizar datos» no hacia absolutamente nada sin red. */
+  #toast{position:fixed; left:50%; transform:translateX(-50%); bottom:calc(64px + env(safe-area-inset-bottom));
+    z-index:60; max-width:min(92vw,420px); background:var(--warn-bg); color:var(--warn);
+    border:1px solid var(--warn); border-radius:10px; padding:10px 14px; font-size:14px;
+    font-weight:600; text-align:center; box-shadow:0 6px 24px var(--velo); display:none}
+  #toast.ver{display:block}
   .nota{display:block; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; line-height:1.35}
   a.nota{color:inherit; text-decoration:none}
   a.nota:active{background:var(--acc-soft)}
@@ -233,6 +241,7 @@
 <main class="wrap" id="vista"></main>
 
 <div class="ticker" aria-hidden="true"><div class="cinta" id="cinta"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 /* ---- carga desde el Gist ------------------------------------------------
@@ -254,6 +263,20 @@ function lsDel(k){try{localStorage.removeItem(k);}catch(e){lsRoto=true;}}
 function gistDeHash(){const m=(location.hash||'').match(/^#([0-9a-fA-F]{20,40})$/); return m?m[1].toLowerCase():null;}
 function pantalla(html){document.getElementById('vista').innerHTML=html;}
 function avisoId(txt){const e=document.getElementById('avisoId'); if(e)e.textContent=txt;}
+/* Sin red no se puede recargar: el navegador no tiene el HTML guardado y la
+   app se convierte en su pantalla de error, sin vuelta atras. Los sitios de
+   recarga son CINCO, no cuatro: guardarId, olvidarId, recargar(), el refresco
+   automatico, y los onclick. La primera pasada conto mal y dejo afuera
+   guardarId y olvidarId — justo los dos que ademas borran cosas antes. */
+function sinRed(){ return typeof navigator!=='undefined' && navigator.onLine===false; }
+function avisar(txt){
+  const a=document.getElementById('avisoRecarga');
+  if(a){a.textContent=txt; return;}
+  const t=document.getElementById('toast');
+  if(!t)return;
+  t.textContent=txt; t.classList.add('ver');
+  clearTimeout(avisar._t); avisar._t=setTimeout(()=>t.classList.remove('ver'),4000);
+}
 function guardarId(){
   const crudo=((document.getElementById('inId')||{}).value||'').trim();
   const v=crudo.match(/[0-9a-fA-F]{20,40}/);
@@ -263,18 +286,28 @@ function guardarId(){
                       :'Pegá el código que viene después del # en el link.'); return;}
   if(!lsSet(CLAVE_ID,v[0].toLowerCase())){
     avisoId('Este navegador no deja guardar datos. Probá sin modo privado.'); return;}
+  if(sinRed()){avisoId('Guardado. Cuando tengas señal, tocá Guardar de nuevo.'); return;}
   location.reload();
 }
-function olvidarId(){lsDel(CLAVE_ID); lsDel(CLAVE_CACHE); location.reload();}
+function olvidarId(){
+  // Ojo: esto borra el codigo Y la copia antes de recargar. Sin red dejaba la
+  // pantalla en blanco, sin datos y sin forma de volver.
+  if(sinRed()){avisar('Seguís sin señal. Probá de nuevo cuando tengas datos.'); return;}
+  lsDel(CLAVE_ID); lsDel(CLAVE_CACHE); location.reload();
+}
 /* Sin service worker, recargar SIN RED se lleva puesta la app: el navegador
    no tiene el HTML guardado, muestra su propia pantalla de error y no hay
    vuelta atras -- ni siquiera queda el boton para reintentar. El guard estaba
    solo en el refresco automatico, y justo faltaba en los dos botones que el
    usuario toca cuando algo no anda. */
 function recargar(){
-  if(typeof navigator!=='undefined' && navigator.onLine===false){
-    const a=document.getElementById('avisoRecarga');
-    if(a)a.textContent='Seguís sin señal. Probá de nuevo cuando tengas datos.';
+  if(sinRed()){
+    // El cajon del menu tapa el aviso si quedo abierto. `cerrarNav` vive dentro
+    // del closure de iniciar(), asi que desde aca se hace a mano.
+    document.body.classList.remove('nav');
+    const bm=document.getElementById('btnMenu');
+    if(bm)bm.setAttribute('aria-expanded','false');
+    avisar('Seguís sin señal. Probá de nuevo cuando tengas datos.');
     return;
   }
   location.reload();
@@ -311,10 +344,11 @@ async function cargar(){
     // asi que con un simple «dibujar y despues guardar» igual pisaba la copia
     // buena, y el usuario se quedaba sin el panel de ayer en la estacion.
     if(iniciar(datos)){ lsSet(CLAVE_CACHE,JSON.stringify({t:Date.now(),datos})); return; }
-    // El paquete vino sin un solo dia. La copia buena ya no se pisa (eso se
-    // arreglo antes), pero tampoco se usaba: el panel de ayer estaba en el
-    // telefono, intacto, y el usuario veia un cartel. Media entrega. Se cae al
-    // rescate, que lo dibuja con el aviso correspondiente.
+    // El paquete vino sin un solo dia. Si hay copia, el panel de ayer es mejor
+    // que un cartel: se cae al rescate. Si NO hay copia, el cartel que iniciar()
+    // acaba de dibujar («Todavia no hay planillas») es el diagnostico correcto —
+    // mandarlo a «Revisa la senal» con la red perfecta era peor que antes.
+    if(!lsGet(CLAVE_CACHE)) return;
     vacio=true;
     throw new Error('el paquete no trae ningun dia');
   }catch(err){
@@ -329,8 +363,14 @@ async function cargar(){
     try{
     if(c){
       const {t,datos}=JSON.parse(c);
-      iniciar(datos);
-      restaurado=true;
+      // Si la copia tampoco trae un dia, iniciar() devuelve false y dibuja su
+      // propio cartel: poner restaurado=true a ciegas colgaba encima una banda
+      // que decia «Mostrando lo ultimo descargado» sobre una pantalla vacia.
+      restaurado=iniciar(datos);
+      // La banda solo tiene sentido si de verdad se dibujo el panel de la copia.
+      // Se colgaba igual cuando la copia tampoco traia un dia: quedaba un
+      // «Mostrando lo ultimo descargado» encima de «Todavia no hay planillas».
+      if(restaurado){
       const av=document.createElement('div');
       av.className='banda'; av.style.background='var(--warn-bg)'; av.style.color='var(--warn)';
       av.innerHTML='<span class="punto" style="background:var(--warn)"></span><span>'+
@@ -338,6 +378,7 @@ async function cargar(){
         '<small>Mostrando lo último descargado ('+new Date(t).toLocaleString('es-AR',
         {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})+')</small></span>';
       document.querySelector('.wrap').prepend(av);
+      }
     }
     }catch(err2){
       // La copia no sirve. Se tira, asi el proximo arranque no vuelve a
@@ -347,7 +388,11 @@ async function cargar(){
       // tiro fue algo posterior (el cartel de «Sin conexion»), reemplazarlo por
       // la pantalla de error es cambiar algo que funciona por algo que no.
     }
-    if(!restaurado){
+    // `!vacio`: si el paquete vino sin un solo dia y la copia tampoco trae
+    // nada, el cartel que iniciar() acaba de dibujar («Todavia no hay
+    // planillas») es el diagnostico correcto. Taparlo con «No se pudo cargar»
+    // manda a revisar una senal que esta perfecta.
+    if(!restaurado && !vacio){
       // El menu y la cinta pueden haber quedado escritos por un iniciar() que
       // tiro a mitad. Con la vista general muerta, un menu vivo lleva a fichas
       // que funcionan y a un «Vista general» que no responde nunca.
@@ -380,6 +425,11 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 function iniciar(DATA){
+// Se reponen por si una corrida anterior los escondio: cuando el paquete viene
+// vacio, iniciar() corre DOS veces (el paquete y despues la copia), y el panel
+// rescatado quedaba sin hamburguesa y sin cinta — el menu, inalcanzable.
+{const b=document.getElementById('btnMenu'); if(b)b.style.display='';
+ const k=document.querySelector('.ticker'); if(k)k.style.display='';}
 const NOTAS = DATA.notas || [];
 
 /* ---- colores de series: los mismos del panel de escritorio ---- */
