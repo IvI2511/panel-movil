@@ -559,6 +559,32 @@ function mixComb(o, gnc){
           pctPremium: liq? prem/liq*100 : null};
 }
 const pct0 = v => v==null ? '—' : Math.round(v)+'%';
+/* Control del GNC: el consumo que marca el PUENTE (lectura de hoy menos la
+   anterior) contra lo que marcaron los surtidores. `pu` es un contador
+   acumulado y viaja en el JSON desde siempre sin que nadie lo leyera.
+   Copiada de gncCtrl() del escritorio, incluida la busqueda hacia atras: no
+   todos los dias traen lectura, asi que se resta contra la ULTIMA que haya.
+   Va SIN semaforo: es dato de referencia por decision del usuario
+   (22-jul-2026, v1.4.1). Sin colores por rango, sin alertas. */
+function gncCtrl(e){
+  if(!e.tieneGnc || !e.dias.length) return null;
+  const L = e.dias[e.dias.length-1];
+  let prev = null;
+  for(let i=e.dias.length-2;i>=0;i--){ if(e.dias[i].pu>0){ prev=e.dias[i]; break; } }
+  if(!L.pu || !prev || L.pu<=prev.pu) return {nd:true, gnc:L.gnc};
+  const consumo = L.pu - prev.pu;
+  // Cuantos dias abarca el consumo del puente. Si el encargado no anoto la
+  // lectura algun dia, la resta cubre mas de una jornada y compararla contra
+  // los surtidores de UN solo dia da una diferencia enorme y sin sentido. El
+  // panel de escritorio la muestra igual; aca se prefiere no afirmar nada y
+  // decir que el periodo no coincide.
+  const dd = (a,b)=>Math.round((new Date(b.slice(0,4),+b.slice(5,7)-1,b.slice(8,10))
+                              - new Date(a.slice(0,4),+a.slice(5,7)-1,a.slice(8,10)))/86400000);
+  const span = dd(prev.fecha, L.fecha);
+  if(span !== 1) return {consumo:consumo, gnc:L.gnc, span:span, desde:prev.fecha};
+  const dif = consumo - (L.gnc||0);
+  return {consumo:consumo, dif:dif, pct: L.gnc? dif/L.gnc*100 : 0, gnc:L.gnc};
+}
 
 const $ = s => document.querySelector(s);
 const fmt = new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
@@ -944,6 +970,74 @@ function vEstacion(clave){
   const dias=e.dias, ult=e.ult;
   const fe = factEstimada(e);
   const mixDia = mixComb(ult, ult.gnc);
+  const PV = preciosFF(dias);
+
+  // Precios vigentes: el ultimo cargado de cada producto. Viajaban en el
+  // JSON y no se mostraban en ningun lado.
+  let preciosHtml='';
+  {
+    const filas = PRODS.concat([{k:'gnc',l:'GNC',c:GNC_C},{k:'aceite',l:'Aceite',c:'#9A8CC0'}])
+      .map(p=>{ const v = PV[p.k] && PV[p.k][PV[p.k].length-1]; return v? {l:p.l, v:v} : null; })
+      .filter(Boolean);
+    if(filas.length)
+      preciosHtml = '<div class="card"><h2>Precios</h2><div class="baj">'+
+        'El último cargado en la planilla de cada producto</div>'+
+        '<div style="overflow-x:auto"><table><tr><th>Producto</th><th>$ / litro</th></tr>'+
+        filas.map(f=>'<tr><td>'+esc(f.l)+'</td><td>'+fmt.format(f.v)+'</td></tr>').join('')+
+        '</table></div></div>';
+  }
+
+  // Control del puente de GNC.
+  let gncHtml='';
+  {
+    const g = gncCtrl(e);
+    if(g && !g.nd)
+      gncHtml = '<div class="card"><h2>GNC · puente vs. surtidores</h2>'+
+        '<div class="baj">'+diaLbl(e.ult.fecha)+' · dato de referencia, sin semáforo</div>'+
+        // Sin hbars: abrevia con kf() y 1.420 sale como "1,4 k". En un control
+        // de diferencias hay que ver el numero entero.
+        '<div style="overflow-x:auto"><table>'+
+        '<tr><td>Consumo del puente</td><td><b>'+fmt.format(g.consumo)+' m³</b></td></tr>'+
+        '<tr><td>Vendido por surtidores</td><td><b>'+fmt.format(g.gnc)+' m³</b></td></tr>'+
+        '</table></div>'+
+        '<div class="baj" style="margin-top:8px">'+
+        (g.span!==undefined
+          ? 'No se puede comparar: la lectura anterior es del '+diaLbl(g.desde)+
+            ', así que el puente abarca '+g.span+' días y los surtidores uno solo.'
+          : 'Diferencia: <b>'+(g.dif>=0?'+':'−')+fmt.format(Math.abs(g.dif))+' m³</b> ('+
+            (g.pct>=0?'+':'−')+Math.abs(g.pct).toFixed(1).replace('.',',')+'%)')+
+        '</div></div>';
+    else if(g)
+      gncHtml = '<div class="card"><h2>GNC · puente vs. surtidores</h2>'+
+        '<div class="baj">Falta la lectura del puente en la planilla de este día.</div></div>';
+  }
+
+  // Margen bruto: lo que se paga al camion contra el precio de venta.
+  // Copiado del bloque detMargen del escritorio.
+  let margenHtml='';
+  {
+    const cs = e.camiones||[];
+    const impMes = cs.reduce((a,c)=>a+(c.importe||0),0);
+    const ltsMes = cs.reduce((a,c)=>a+(c.litros||0),0);
+    const liqMes = dias.reduce((a,x)=>a+(x.liq||0),0);
+    if(fe.ok && impMes>0 && ltsMes>0 && liqMes>0){
+      const pv = fe.liq.reduce((a,b)=>a+b,0)/liqMes;   // venta promedio ponderada
+      const costo = impMes/ltsMes;
+      const mg = pv-costo;
+      margenHtml = '<div class="card"><h2>Margen bruto estimado</h2>'+
+        '<div class="baj">'+mesAct+' · lo que se paga por litro al camión contra el precio de venta</div>'+
+        '<div class="kpis" style="margin-top:8px">'+
+        '<div class="kpi"><div class="lbl">Costo del camión</div><div class="val">$ '+fmt.format(Math.round(costo))+'</div>'+
+        '<div class="sub">por litro · importe ÷ litros</div></div>'+
+        '<div class="kpi"><div class="lbl">Precio de venta prom.</div><div class="val">$ '+fmt.format(Math.round(pv))+'</div>'+
+        '<div class="sub">por litro · ponderado</div></div>'+
+        '<div class="kpi"><div class="lbl">Margen bruto</div><div class="val">$ '+fmt.format(Math.round(mg))+'</div>'+
+        '<div class="sub">por litro · '+(pv?Math.round(mg/pv*100):0)+'% sobre el precio</div></div>'+
+        '<div class="kpi"><div class="lbl">Margen del mes</div><div class="val">$ '+kf(mg*liqMes)+'</div>'+
+        '<div class="sub">margen × litros del mes</div></div>'+
+        '</div></div>';
+    }
+  }
   const fech = dias.map(d=>d.fecha);   // las fechas PROPIAS (puede venir corta)
   const diaProd = PRODS.map(p=>({l:p.l,c:p.c,v:ult[p.k]||0})).filter(p=>p.v);
   const mesProd = PRODS.map(p=>({l:p.l,c:p.c,v:sumaCampo(dias,p.k)})).filter(p=>p.v);
@@ -1090,6 +1184,10 @@ function vEstacion(clave){
 
   ${personalHtml}
 
+  ${preciosHtml}
+
+  ${gncHtml}
+
   ${stockHtml}
 
   ${tanquesHtml}
@@ -1105,6 +1203,8 @@ function vEstacion(clave){
     <div class="lectura">Tocá una barra para ver el día.</div></div>
 
   ${mixHtml}
+
+  ${margenHtml}
 
   <div class="card"><h2>Por día de la semana</h2><div class="baj">Promedio de litros · ${mesAct}</div>
     ${hbars(porDowE,'L')}</div>
