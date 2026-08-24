@@ -694,6 +694,7 @@ const mesAct = MESN[Number(fechaMax.slice(5,7))-1];
 const estPrev = ESTS.find(e=>e.prev.length);
 const mesPrev = estPrev ? MESN[Number(estPrev.prev[0].fecha.slice(5,7))-1] : 'mes pasado';
 const grupoDia = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).liq||0)));
+const grupoGnc = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).gnc||0)));
 const grupoPrev = (()=>{ // julio, dia a dia (hasta 31)
   // SOLO las que aportaron algo este mes. Si no, el numerador (agosto) tiene
   // cinco estaciones y el denominador (julio) tiene seis: la que no cargo nada
@@ -852,19 +853,37 @@ function fichaEst(e){
     '<div class="gnc">'+(e.gnc ? 'GNC '+fmt.format(e.gnc)+' m³'
       : e.tieneGnc ? 'GNC 0 m³ ese día' : 'Sin GNC este mes')+'</div></div>';
 }
-function proyCard(acum, nCon, prevTot, quien){
+/* `opts.etiqueta` cuelga del titulo (queda «Proyección de cierre · GNC») y
+   `opts.unidad` cambia L por m³. El escritorio proyecta liquido y GNC por
+   separado en las dos vistas (genProy y detProy); aca habia una sola. */
+function proyCard(acum, nCon, prevTot, quien, opts){
+  opts = opts || {};
+  const u = opts.unidad || 'L';
   if(!nCon)return '';
   const proy = acum/nCon*DIAS_MES;
   const d = prevTot ? (proy-prevTot)/prevTot*100 : null;
-  return '<div class="card"><h2>Proyección de cierre</h2>'+
+  return '<div class="card"><h2>Proyección de cierre'+(opts.etiqueta?' · '+opts.etiqueta:'')+'</h2>'+
     '<div class="baj">'+quien+' · a este ritmo</div>'+
     '<div class="kpis" style="margin-top:2px">'+
     '<div class="kpi" style="border:0;padding:0"><div class="lbl">Proyección '+mesAct+'</div>'+
-    '<div class="val">'+kf(Math.round(proy))+' L</div>'+
+    '<div class="val">'+kf(Math.round(proy))+' '+u+'</div>'+
     (d==null?'':'<div class="sub">'+flecha(d)+' vs '+mesPrev+'</div>')+'</div>'+
     '<div class="kpi" style="border:0;padding:0"><div class="lbl">Cerró '+mesPrev+'</div>'+
-    '<div class="val">'+(prevTot?kf(prevTot)+' L':'s/d')+'</div>'+
+    '<div class="val">'+(prevTot?kf(prevTot)+' '+u:'s/d')+'</div>'+
     '<div class="sub">'+nCon+' de '+DIAS_MES+' días cargados</div></div></div></div>';
+}
+
+/* Facturacion estimada del grupo: la suma de las que SI se pueden estimar.
+   Si a una estacion le falta el precio de un producto que vendio, no se
+   inventa: queda afuera y se dice cuantas entraron. */
+function factGrupo(){
+  let dia=0, mes=0, n=0;
+  frescas.forEach(e=>{
+    const f = factEstimada(e);
+    if(!f.ok || !f.total.length) return;
+    dia += f.total[f.total.length-1]; mes += suma(f.total); n++;
+  });
+  return {dia:Math.round(dia), mes:Math.round(mes), n:n};
 }
 
 function vGeneral(){
@@ -878,6 +897,8 @@ function vGeneral(){
   const rank=ESTS.slice().sort((a,b)=>b.enDia-a.enDia);
   const promPrevG = grupoPrev.length? suma(grupoPrev.map(d=>d.liq))/grupoPrev.length : 0;
 
+  const feGrupo = factGrupo();
+
   const html = `
   <div class="divisor">Del día</div>
   <div class="kpis">
@@ -887,6 +908,9 @@ function vGeneral(){
       <div class="sub">${gncSub(TOT.gncDelta)}</div></div>
     <div class="kpi"><div class="lbl">Cobrado digital</div><div class="val">$ ${kf(TOT.fact)}</div>
       <div class="sub">MP + tarjetas + SB + redención</div></div>
+    ${feGrupo.n?`<div class="kpi"><div class="lbl">Facturación estimada</div>
+      <div class="val">$ ${kf(feGrupo.dia)}</div>
+      <div class="sub">del mes: $ ${kf(feGrupo.mes)}${feGrupo.n<frescas.length?' · '+feGrupo.n+' de '+frescas.length+' estaciones':''}</div></div>`:''}
     <div class="kpi"><div class="lbl">Planillas</div><div class="val">${frescas.length}/${ESTS.length}</div>
       <div class="sub">${frescas.length===ESTS.length?'todas al día':'faltan '+(ESTS.length-frescas.length)}</div></div>
   </div>
@@ -909,6 +933,9 @@ function vGeneral(){
   <div class="divisor">Del mes</div>
 
   ${proyCard(suma(grupoDia), grupoDia.filter(v=>v>0).length, Math.round(suma(grupoPrev.map(d=>d.liq))), 'Todo el grupo')}
+
+  ${grupoGnc.some(v=>v>0)?proyCard(suma(grupoGnc), grupoGnc.filter(v=>v>0).length,
+      Math.round(suma(grupoPrev.map(d=>d.gnc||0))), 'Todo el grupo', {unidad:'m³', etiqueta:'GNC'}):''}
 
   <div class="card" id="gVentas"><h2>Ventas diarias — grupo</h2>
     <div class="baj">Litros líquidos por día · ${mesAct}</div><div class="cch"></div>
@@ -970,6 +997,8 @@ function vEstacion(clave){
   const dias=e.dias, ult=e.ult;
   const fe = factEstimada(e);
   const mixDia = mixComb(ult, ult.gnc);
+  const serieFact = dias.map(d=>d.fact||0);
+  const hayFact = serieFact.some(v=>v>0);
   const PV = preciosFF(dias);
 
   // Precios vigentes: el ultimo cargado de cada producto. Viajaban en el
@@ -1016,8 +1045,14 @@ function vEstacion(clave){
   // Copiado del bloque detMargen del escritorio.
   let margenHtml='';
   {
-    const cs = e.camiones||[];
-    const impMes = cs.reduce((a,c)=>a+(c.importe||0),0);
+    // Solo los camiones que TRAEN importe. Sumar los litros de los que no lo
+    // traen hunde el costo por litro sin avisar: con un camion de 36.000 L sin
+    // importe entre dos que si, el costo pasa de $ 2.220 a $ 1.291 y el margen
+    // se multiplica. El escritorio los suma todos (detMargen, panel.html:994);
+    // en los datos de julio-2026 es todo o nada y por eso no se nota, pero es
+    // un numero de plata y no puede depender de que siga siendo asi.
+    const cs = (e.camiones||[]).filter(c=>c.importe>0);
+    const impMes = cs.reduce((a,c)=>a+c.importe,0);
     const ltsMes = cs.reduce((a,c)=>a+(c.litros||0),0);
     const liqMes = dias.reduce((a,x)=>a+(x.liq||0),0);
     if(fe.ok && impMes>0 && ltsMes>0 && liqMes>0){
@@ -1196,11 +1231,20 @@ function vEstacion(clave){
 
   ${proyCard(suma(e.serie), e.serie.filter(v=>v>0).length, Math.round(suma(e.prev.map(d=>d.liq))), e.nombre)}
 
+  ${e.tieneGnc?proyCard(sumaCampo(dias,'gnc'), dias.filter(d=>d.gnc>0).length,
+      Math.round(sumaCampo(e.prev,'gnc')), e.nombre, {unidad:'m³', etiqueta:'GNC'}):''}
+
   <div class="card" id="eVentas"><h2>Ventas diarias</h2><div class="baj">Litros líquidos por día · ${mesAct}</div>
     <div class="cch"></div>
     <div class="ref"><span style="color:${PREV_C}"><i></i> media del mes</span>
       ${e.promPrev?'<span style="color:'+GNC_C+'"><i></i> media de '+mesPrev+'</span>':''}</div>
     <div class="lectura">Tocá una barra para ver el día.</div></div>
+
+  ${hayFact?`<div class="card" id="eFact"><h2>Cobrado digital por día</h2>
+    <div class="baj">MP + tarjetas + Shell Box + redención · ${mesAct}</div>
+    <div class="cch"></div>
+    <div class="ref"><span style="color:${PREV_C}"><i></i> media del mes</span></div>
+    <div class="lectura">Tocá una barra para ver el día.</div></div>`:''}
 
   ${mixHtml}
 
@@ -1228,6 +1272,11 @@ function vEstacion(clave){
   const ev=$('#eVentas'); const db=dayBars(fech, e.serie, {linea2:e.promPrev||0});
   ev.querySelector('.cch').innerHTML=db.svg;
   tocable(ev, fech, e.serie, 'L');
+  if(hayFact){
+    const ef=$('#eFact');
+    ef.querySelector('.cch').innerHTML=dayBars(fech, serieFact, {color:'#1D9E75'}).svg;
+    tocable(ef, fech, serieFact, '$');
+  }
   $('#eComb').addEventListener('click', evn=>{
     const c=evn.target.closest('.chip'); if(!c)return;
     document.querySelectorAll('#eComb .chip').forEach(x=>x.classList.toggle('act',x===c));
