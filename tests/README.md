@@ -50,6 +50,27 @@ donde el panel llegaba a decir «Sin faltantes · 5/5» siendo 6),
 `conAtrasadaLider()` (la atrasada entra al top 3 del ticker) y
 `arranqueDeMes()` (día 2, todavía sin GNC cargado).
 
+Y las que se agregaron con la paridad contra el panel de escritorio:
+
+| Variante | Qué reproduce |
+| -- | -- |
+| `camionSinImporte()` | un camión de 36.000 L **sin importe** entre dos que sí lo tienen. Si sus litros entran al divisor, el costo por litro cae de $ 2.220 a $ 1.291 y el margen se multiplica |
+| `unaSinPrecios()` | una estación que vendió todo el mes y **no tiene un solo precio**: su facturación no se puede estimar y no se suma al total del grupo |
+| `conZona()` | los precios de la zona. En el paquete real llega `zona: {}` porque ninguna estación tiene lat/lon en la config del escritorio, así que **este fixture es la única forma de ver la tarjeta** |
+
+El fixture también trae `pr_*` (precios) sólo en los días 3 y 15, para
+ejercitar el arrastre en los dos sentidos, y `pu` (lectura del puente de GNC)
+en todos los días **menos el anteúltimo**: ahí es donde se ve que el puente
+abarca dos jornadas y los surtidores una.
+
+## Contar las mutaciones que sobreviven
+
+Cuidado con medir una mutación por las líneas `FALLA`: una mutación puede
+hacer **reventar** la suite (una excepción no atrapada corta el proceso y no
+imprime ninguna `FALLA`), y ahí un contador ingenuo la da por sobreviviente
+cuando en realidad la agarraron. Verificar siempre que la corrida haya llegado
+a imprimir la línea de «N comprobaciones».
+
 ## Probarlo a ojo en un navegador
 
 Los `.json` para el navegador se generan (no se versionan):
