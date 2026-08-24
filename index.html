@@ -215,6 +215,59 @@
   .ticker .it b{color:var(--txt); font-weight:700}
   .ticker .it .d{width:6px; height:6px; border-radius:50%; background:var(--acc); flex:none}
   @keyframes rueda{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+  /* ---- tablet y pantallas grandes -------------------------------------
+     El objetivo es el LOOK del panel de escritorio, asi que los valores se
+     copian de el en vez de inventarse: KPIs en auto-fit de 160px, tarjetas de
+     estacion en 230px, contenido hasta 1560px y barra lateral de 238px. Son
+     sus numeros exactos (src/static/panel.html).
+
+     Abajo de 760px no cambia NADA: el celular queda tal cual, que es el unico
+     tamano que se probo en seis vueltas de barrido. */
+  @media (min-width: 760px){
+    .wrap{
+      max-width:1560px; display:grid; align-content:start;
+      grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+      padding:20px 26px 60px;      /* el .wrap del escritorio, literal */
+    }
+    /* Y las medidas de sus tarjetas: .panel es la tarjeta del escritorio
+       (radio 12, padding 18/20) y .kpi el bloque de numero (16/18). */
+    .card{border-radius:12px; padding:18px 20px}
+    .kpi{padding:16px 18px}
+    .sec{font-size:16px}
+    /* Lo que estructura la pagina ocupa el ancho entero; las tarjetas fluyen
+       solas en las columnas que entren. */
+    .wrap > .divisor, .wrap > section, .wrap > .banda,
+    .wrap > .volver, .wrap > .est-cab, .wrap > .kpis{grid-column:1/-1}
+    .kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+    /* El escritorio usa 230px para SUS tarjetas, pero la ficha de estacion
+       del movil lleva sparkline: su grilla interna es `1fr 118px`, asi que
+       con 230 la columna del texto queda en ~142px y «10.320 L · vie 21/08»
+       se parte en dos. Con 300 la columna del texto queda en ~280 y entra.
+       Es el mismo criterio del escritorio aplicado a un contenido distinto. */
+    .tarjetas{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+    /* Y las columnas de la ficha van al reves de lo que uno supondria: el
+       sparkline lleva `grid-row:2/4`, asi que la grilla lo coloca PRIMERO y se
+       queda con la columna elastica (285px medidos), dejando los numeros en la
+       fija de 118 — por eso «10.320 L · vie 21/08» se partia aunque la tarjeta
+       fuera ancha. Al invertir las pistas, el sparkline toma sus 118 naturales
+       y el numero se queda con el resto. */
+    .est{grid-template-columns:118px 1fr}
+    /* La cinta es cosa del celular: en pantalla grande ocupa lugar y el panel
+       de escritorio no la tiene. */
+    .ticker{display:none}
+    body{padding-bottom:24px}
+  }
+  /* A partir de aca el escritorio muestra la lista de estaciones SIEMPRE, en
+     una barra lateral fija. Es la parte mas reconocible de su look, y el cajon
+     del movil ya es una barra lateral: sola hay que dejarla puesta. */
+  @media (min-width: 1100px){
+    .topbar .menu{display:none}
+    .velo{display:none}
+    .drawer{transform:none; width:238px; max-width:238px; top:57px; box-shadow:none}
+    .topbar, .wrap{padding-left:258px}
+    .wrap{margin-left:0; margin-right:auto}
+  }
+
   @media (prefers-reduced-motion: reduce){
     .ticker{overflow-x:auto}
     .ticker .cinta{animation:none}
