@@ -218,6 +218,25 @@
   .divisor{display:flex; align-items:center; gap:10px; margin:10px 0 -2px;
     font-size:12.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--txt3); font-weight:750}
   .divisor::after{content:''; flex:1; border-top:1px solid var(--line)}
+  /* Subtitulo adentro de una tarjeta, para separar bloques de la misma. */
+  .sec2{margin:14px 0 6px; font-size:12.5px; font-weight:750; color:var(--txt3);
+    text-transform:uppercase; letter-spacing:.06em}
+  /* Tablas de datos: precios, precios de la zona y meses cerrados del
+     minimercado. Sin esto heredan el default del navegador --encabezado del
+     tamaño del cuerpo, celdas sin aire y los números pegados al texto de al
+     lado-- que es como quedaron al agregarlas. El calendario de francos tiene
+     el suyo (.cal) y queda afuera. */
+  .card table:not(.cal){width:100%; border-collapse:collapse; font-size:13.5px}
+  .card table:not(.cal) th{text-align:left; padding:0 0 6px; font-size:11.5px;
+    font-weight:750; text-transform:uppercase; letter-spacing:.05em; color:var(--txt3);
+    border-bottom:1px solid var(--line)}
+  .card table:not(.cal) td{padding:7px 0; border-bottom:1px solid var(--line)}
+  .card table:not(.cal) tr:last-child td{border-bottom:0}
+  /* Los números a la derecha y con ancho fijo, para que las columnas se puedan
+     comparar de un vistazo. */
+  .card table:not(.cal) th:not(:first-child),
+  .card table:not(.cal) td:not(:first-child){text-align:right; padding-left:10px;
+    font-variant-numeric:tabular-nums}
 
   /* ---- ticker inferior ---- */
   .ticker{
@@ -1251,6 +1270,69 @@ function vEstacion(clave){
       '<div class="leyfr">'+codigos.map(c=>'<span style="background:'+frColor(c)+'">'+esc(c)+'</span>').join('')+'</div></div>';
   }
 
+  /* Minimercado (PORT-37). El resumen llega ya masticado por movil.py: `r`
+     con los totales, `n` cuantos dias hay cargados y `previos` los meses
+     cerrados. Las cuentas son las del escritorio (detMini en panel.html).
+     Va SIN semaforo, y eso es deliberado: la mercaderia se cuenta por lo
+     COMPRADO en el mes y no por lo vendido --nadie lleva stock--, asi que un
+     mes con mucha compra sobre el final da un margen bajo que no significa
+     nada malo. Un color ahi seria inventar un juicio que el dato no banca. */
+  let miniHtml='';
+  {
+    const mm = e.minimercado;
+    if(mm && mm.r){
+      const r = mm.r, prom = mm.n ? Math.round(r.ventas/mm.n) : 0;
+      // El rotulo sale del `ym` que viaja, no de un texto fijo: los primeros
+      // dias del mes la planilla del mini todavia es la del mes pasado, y
+      // decir «mes en curso» ahi es mentira justo los dias en que uno mira.
+      const suyo = !mm.ym || mm.ym === (dias.length ? dias[dias.length-1].fecha.slice(0,7) : mm.ym);
+      const mesMM = mm.ym ? MESN[+mm.ym.slice(5,7)-1] : mesAct;
+      const kpi = (l,v,sub)=>'<div class="kpi"><div class="lbl">'+l+'</div>'+
+        '<div class="val">'+v+'</div><div class="sub">'+sub+'</div></div>';
+      const cobros = [{l:'Efectivo',v:r.efectivo,c:'#D85A30'},{l:'Mercado Pago',v:r.mercado_pago,c:'#7F77DD'},
+                      {l:'Tarjeta',v:r.tarjeta,c:'#378ADD'},{l:'Red',v:r.red,c:'#8FA33B'},
+                      {l:'Shell Box',v:r.shellbox,c:'#1D9E75'}].filter(x=>x.v>0);
+      // Los ingresos de playa NO son un egreso: en una lista de egresos
+      // confunden, y el escritorio los marca aparte por eso mismo.
+      const salidas = [{l:'Mercadería',v:r.mercaderia,c:'#D85A30'},{l:'Insumos',v:r.insumos,c:'#EF9F27'},
+                       {l:'Gastos',v:r.gasto,c:'#888780'},{l:'Retenciones',v:r.retenciones,c:'#B0578D'}]
+                      .filter(x=>x.v>0);
+      const sinPlata = (r.ven||0)+(r.consumo||0)+(r.devoluciones||0);
+      const ms = Object.keys(mm.previos||{}).sort().reverse();
+      miniHtml =
+        '<div class="card"><h2>Minimercado · '+esc(mesMM)+'</h2>'+
+        '<div class="baj">'+(suyo?'Lo que va del mes':'La planilla del mes en curso todavía no llegó: '+
+          'esto es lo último que hay')+'. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
+        '<div class="kpis" style="margin-top:8px">'+
+        kpi('Venta del mes','$ '+kf(r.ventas), mm.n+' días cargados · $ '+kf(prom)+'/día')+
+        kpi('Ventas netas','$ '+kf(r.ventas_netas),'sin vencida, consumo ni devoluciones')+
+        kpi('Salió de la caja','$ '+kf(r.egresos),'mercadería, insumos, gastos')+
+        kpi('Margen bruto','$ '+kf(r.resultado),
+            (r.margen!=null?Math.round(r.margen*100)+'% de las netas · ':'')+'antes de sueldos')+
+        (r.resultado_neto!=null
+          ? kpi('Resultado final','<span class="'+(r.resultado_neto>=0?'up':'down')+'">'+
+              (r.resultado_neto>=0?'':'−')+'$ '+kf(Math.abs(r.resultado_neto))+'</span>',
+              (r.empleados?r.empleados+' empleado'+(r.empleados===1?'':'s')+' · ':'sin personal cargado · ')+
+              'estructura aprox. descontada')
+          : '')+
+        '</div>'+
+        (cobros.length?'<div class="sec2">Cómo se cobró</div>'+hbars(cobros,'$',true):'')+
+        (salidas.length?'<div class="sec2">Qué salió de la caja</div>'+hbars(salidas,'$',true):'')+
+        (sinPlata?'<p class="baj" style="margin-top:10px">No entró plata por: vencida $ '+
+          kf(r.ven||0)+' · consumo del local $ '+kf(r.consumo||0)+' · devoluciones $ '+
+          kf(r.devoluciones||0)+'. Ya están descontadas de las ventas netas.</p>':'')+
+        (ms.length?'<div class="sec2">Meses cerrados</div><div style="overflow-x:auto"><table>'+
+          '<tr><th>Mes</th><th>Ventas</th><th>Netas</th><th>Salió</th><th>Margen</th></tr>'+
+          ms.map(m=>{const p=mm.previos[m]; return '<tr><td>'+esc(MESN[+m.slice(5,7)-1])+'</td>'+
+            '<td>$ '+kf(p.ventas||0)+'</td><td>$ '+kf(p.ventas_netas||0)+'</td>'+
+            '<td>$ '+kf(p.egresos||0)+'</td><td>$ '+kf(p.resultado||0)+'</td></tr>';}).join('')+
+          '</table></div>':'')+
+        (mm.archivo?'<p class="baj" style="margin-top:10px">Sale de '+esc(mm.archivo)+'. '+
+          'El mes en curso se rehace desde los turnos y la caja; los cerrados salen de la hoja Resultados.</p>':'')+
+        '</div>';
+    }
+  }
+
   // Solo hay pestaña Personal si hay algo que mostrar en ella.
   const hayPersonal = !!(personalHtml || calHtml);
   const html = `
@@ -1263,6 +1345,7 @@ function vEstacion(clave){
     <button class="tab act" data-g="dia">Del día</button>
     <button class="tab" data-g="mes">Del mes</button>
     ${hayPersonal?`<button class="tab" data-g="per">Personal</button>`:''}
+    ${miniHtml?`<button class="tab" data-g="mini">Mini</button>`:''}
   </div>
 
   <div class="gr" data-g="dia">
@@ -1352,6 +1435,10 @@ function vEstacion(clave){
   ${personalHtml}
 
   ${calHtml}
+  </div>`:''}
+
+  ${miniHtml?`<div class="gr" data-g="mini" hidden>
+  ${miniHtml}
   </div>`:''}`;
   $('#vista').innerHTML = html;
   const ev=$('#eVentas'); const db=dayBars(fech, e.serie, {linea2:e.promPrev||0});
