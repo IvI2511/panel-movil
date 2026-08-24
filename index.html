@@ -133,8 +133,15 @@
 
   /* ---- vista rapida (la maqueta aprobada) ---- */
   .tarjetas{display:flex; flex-direction:column; gap:10px}
+  /* `118px 1fr` y no `1fr 118px`: el sparkline lleva `grid-row:2/4`, asi que la
+     grilla LO COLOCA PRIMERO y con `1fr 118px` se quedaba con la columna
+     elastica, dejando los numeros en la fija de 118 — «10.320 L · vie 21/08» se
+     partia en dos. Invertidas, el sparkline toma sus 118 naturales (que es su
+     ancho real: `.est svg{width:118px}`) y el numero se queda con el resto. La
+     disposicion en pantalla no cambia: sparkline a la izquierda, numeros a la
+     derecha. */
   .est{background:var(--surf); border:1px solid var(--line); border-radius:15px; padding:13px 14px;
-    display:grid; grid-template-columns:1fr 118px; gap:2px 10px; cursor:pointer; -webkit-tap-highlight-color:transparent}
+    display:grid; grid-template-columns:118px 1fr; gap:2px 10px; cursor:pointer; -webkit-tap-highlight-color:transparent}
   /* 1/-1 en vez de 1/3: con `1/3` la cabecera FUERZA una segunda columna
      implicita, asi que la ficha sin sparkline seguia partida en dos aunque
      .est.vacia declarara una sola. En la grilla normal significan lo mismo. */
@@ -245,13 +252,6 @@
        se parte en dos. Con 300 la columna del texto queda en ~280 y entra.
        Es el mismo criterio del escritorio aplicado a un contenido distinto. */
     .tarjetas{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
-    /* Y las columnas de la ficha van al reves de lo que uno supondria: el
-       sparkline lleva `grid-row:2/4`, asi que la grilla lo coloca PRIMERO y se
-       queda con la columna elastica (285px medidos), dejando los numeros en la
-       fija de 118 — por eso «10.320 L · vie 21/08» se partia aunque la tarjeta
-       fuera ancha. Al invertir las pistas, el sparkline toma sus 118 naturales
-       y el numero se queda con el resto. */
-    .est{grid-template-columns:118px 1fr}
     /* La cinta es cosa del celular: en pantalla grande ocupa lugar y el panel
        de escritorio no la tiene. */
     .ticker{display:none}
