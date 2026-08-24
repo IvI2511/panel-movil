@@ -812,7 +812,11 @@ function tocable(cardEl, dias, vals, unidad){
   svg.addEventListener('click', ev=>{
     const r=ev.target.closest('rect[data-i]'); if(!r)return;
     const i=+r.dataset.i;
-    out.textContent = diaLbl(dias[i])+' · '+fmt.format(vals[i])+' '+unidad;
+    // El peso va ADELANTE, como en hbars y en los KPI; las demas unidades
+    // (L, m³) van atras. Nacio solo para litros y las tarjetas de cobrado
+    // digital y precio por litro son las primeras en pasarle $.
+    out.textContent = diaLbl(dias[i])+' · '+(unidad==='$'?'$ ':'')+
+      fmt.format(vals[i])+(unidad&&unidad!=='$'?' '+unidad:'');
   });
 }
 
@@ -891,6 +895,12 @@ function vGeneral(){
   const gncMes = suma(ESTS.map(e=>sumaCampo(e.dias,'gnc')));
   const diaProdG = PRODS.map(p=>({l:p.l,c:p.c,v:suma(ESTS.map(e=>(e.porFecha[fechaMax]||{})[p.k]||0))})).filter(p=>p.v);
   const medios = MEDIOS.map(m=>({l:m.l,c:m.c,v:suma(ESTS.map(e=>sumaCampo(e.dias,m.k)))})).filter(m=>m.v>0);
+  // Los del dia del grupo. Va sobre `frescas` por decir la intencion, no
+  // porque haga falta: una estacion atrasada no tiene fila en `fechaMax` y ya
+  // aporta cero. Lo que NO hay que hacer es sumarle el mes entero, que es el
+  // error que dio vuelta el signo de tres porcentajes en el barrido anterior.
+  const mediosDia = MEDIOS.map(m=>({l:m.l,c:m.c,
+    v:suma(frescas.map(e=>(e.porFecha[fechaMax]||{})[m.k]||0))})).filter(m=>m.v>0);
   const acumA=[]; grupoDia.reduce((a,v)=>{acumA.push(a+v);return a+v;},0);
   const acumB=[]; grupoPrev.reduce((a,d)=>{acumB.push(a+d.liq);return a+d.liq;},0);
   const porDow=porDowDe(FECHAS, grupoDia);
@@ -947,6 +957,10 @@ function vGeneral(){
     <div class="chips"><button class="chip act" data-m="liq">Líquidos</button><button class="chip" data-m="gnc">Con GNC</button></div>
     <div class="baj" id="gCombBaj">Litros por producto</div>
     <div class="cdonut">${donut(mesProd)}</div></div>
+
+  ${mediosDia.length?`<div class="card"><h2>Medios de pago del día</h2>
+    <div class="baj">Todo el grupo · ${diaLbl(fechaMax)} · con efectivo</div>
+    ${hbars(mediosDia,'$',true)}</div>`:''}
 
   <div class="card"><h2>Medios de pago del mes</h2><div class="baj">Todo el grupo · ${mesAct}</div>
     ${hbars(medios,'$',true)}</div>
@@ -1104,6 +1118,14 @@ function vEstacion(clave){
   const diaProd = PRODS.map(p=>({l:p.l,c:p.c,v:ult[p.k]||0})).filter(p=>p.v);
   const mesProd = PRODS.map(p=>({l:p.l,c:p.c,v:sumaCampo(dias,p.k)})).filter(p=>p.v);
   const medios = MEDIOS.map(m=>({l:m.l,c:m.c,v:sumaCampo(dias,m.k)})).filter(m=>m.v>0);
+  // Los del DIA, aparte de los del mes. El escritorio muestra los dos y no es
+  // repetición: el del mes junta 20 días y tapa el día raro, que es justo el
+  // que se mira cuando no cierra la caja.
+  const mediosDia = MEDIOS.map(m=>({l:m.l,c:m.c,v:ult[m.k]||0})).filter(m=>m.v>0);
+  // Precio promedio del litro, día a día: facturación estimada del líquido ÷
+  // litros vendidos (detPerL del escritorio). Se mueve solo con los precios y
+  // el mix: si baja sin cambio de precio, se vende más del producto barato.
+  const perL = fe.ok ? dias.map((d2,i)=>d2.liq?Math.round(fe.liq[i]/d2.liq):0) : null;
   const acumA=[]; e.serie.reduce((a,v)=>{acumA.push(a+v);return a+v;},0);
   const acumB=[]; e.prev.reduce((a,d)=>{acumB.push(a+d.liq);return a+d.liq;},0);
   const aceiteMes = sumaCampo(dias,'ac_lts');
@@ -1282,8 +1304,18 @@ function vEstacion(clave){
   <div class="card"><h2>Por día de la semana</h2><div class="baj">Promedio de litros · ${mesAct}</div>
     ${hbars(porDowE,'L')}</div>
 
+  ${mediosDia.length?`<div class="card"><h2>Medios de pago del día</h2>
+    <div class="baj">${e.nombre} · ${diaLbl(e.ult.fecha)} · con efectivo</div>
+    ${hbars(mediosDia,'$',true)}</div>`:''}
+
   <div class="card"><h2>Medios de pago del mes</h2><div class="baj">${e.nombre} · ${mesAct}</div>
     ${medios.length?hbars(medios,'$',true):'<p class="baj">La planilla no trae el desglose.</p>'}</div>
+
+  ${perL?`<div class="card" id="ePerL"><h2>Precio promedio del litro</h2>
+    <div class="baj">Facturación estimada del líquido ÷ litros vendidos · ${mesAct}${perL[perL.length-1]?` · ${diaLbl(e.ult.fecha)}: $ ${fmt.format(perL[perL.length-1])} /L`:''}</div>
+    <div class="cch"></div>
+    <div class="ref"><span style="color:${PREV_C}"><i></i> media del mes</span></div>
+    <div class="lectura">Tocá una barra para ver el día.</div></div>`:''}
 
   ${camionesHtml}
 
@@ -1305,6 +1337,11 @@ function vEstacion(clave){
     const ef=$('#eFact');
     ef.querySelector('.cch').innerHTML=dayBars(fech, serieFact, {color:'#1D9E75'}).svg;
     tocable(ef, fech, serieFact, '$');
+  }
+  if(perL){
+    const ep=$('#ePerL');
+    ep.querySelector('.cch').innerHTML=dayBars(fech, perL, {color:'#EF9F27'}).svg;
+    tocable(ep, fech, perL, '$');
   }
   $('#eComb').addEventListener('click', evn=>{
     const c=evn.target.closest('.chip'); if(!c)return;
