@@ -1016,6 +1016,33 @@ function vEstacion(clave){
         '</table></div></div>';
   }
 
+  /* Precios de la zona: mi ultimo precio contra la mediana de las estaciones
+     del radio, del dataset publico de la Secretaria de Energia. Del bloque que
+     arma zona.py, movil.py solo reenvia en_radio, radio_km y medianas: las
+     banderas y la lista de competidores se quedan en el escritorio.
+     HOY llega vacio porque ninguna estacion tiene lat/lon en la config: la
+     tarjeta aparece sola el dia que se carguen. */
+  let zonaHtml='';
+  {
+    const z = (DATA.zona||{})[e.clave];
+    const filas = z && z.medianas ? PRODS.concat([{k:'gnc',l:'GNC'}]).map(pr=>{
+      const med = z.medianas[pr.k], mio = PV[pr.k] && PV[pr.k][PV[pr.k].length-1];
+      return med ? {l:pr.l, med:med, mio:mio||null, dif: mio? mio-med : null} : null;
+    }).filter(Boolean) : [];
+    if(filas.length)
+      zonaHtml = '<div class="card"><h2>Precios de la zona</h2>'+
+        '<div class="baj">Lo que declararon '+z.en_radio+' estaciones en '+z.radio_km+
+        ' km, en el dataset de la Secretaría de Energía. El precio lo decide la '+
+        'estación: esto es un dato, no una orden.</div>'+
+        '<div style="overflow-x:auto"><table><tr><th>Producto</th><th>El mío</th>'+
+        '<th>Mediana</th><th>Dif.</th></tr>'+
+        filas.map(f=>'<tr><td>'+esc(f.l)+'</td><td>'+(f.mio?fmt.format(f.mio):'—')+'</td>'+
+          '<td>'+fmt.format(f.med)+'</td><td>'+(f.dif==null?'—':
+            '<span class="'+(f.dif>=0?'up':'down')+'">'+(f.dif>=0?'+':'−')+
+            fmt.format(Math.abs(Math.round(f.dif)))+'</span>')+'</td></tr>').join('')+
+        '</table></div></div>';
+  }
+
   // Control del puente de GNC.
   let gncHtml='';
   {
@@ -1220,6 +1247,8 @@ function vEstacion(clave){
   ${personalHtml}
 
   ${preciosHtml}
+
+  ${zonaHtml}
 
   ${gncHtml}
 
