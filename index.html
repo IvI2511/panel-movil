@@ -458,6 +458,55 @@ const MEDIOS = [
   {k:'pg_redencion',l:'Redención',c:'#EF9F27'},{k:'pg_flota',l:'Shell Flota',c:'#B0578D'},
   {k:'pg_ctacte',l:'Cta. Corriente',c:'#8FA33B'},{k:'pg_consumo',l:'Consumo/Gastos',c:'#888780'}];
 
+/* ---- las cuentas que ya se podian hacer y no se hacian ----------------
+   El JSON trae los 6 precios diarios (pr_*) desde siempre y el panel no los
+   leia ni una vez. Estas tres funciones son las MISMAS del panel de
+   escritorio (preciosFF, factEstimada, mixComb): copiadas, no reinventadas,
+   porque un mismo numero calculado de dos formas distintas es como los dos
+   paneles se separaron en primer lugar.
+   La unica diferencia es la forma del dato: el escritorio los lee de
+   `d.precios[k]` y aca vienen aplanados como `d.pr_vpn`. */
+const PR_KEYS = ['vpn','sup','vpd','form','gnc','aceite'];
+/* Arrastre en los DOS sentidos: el encargado anota el precio solo cuando
+   cambia, asi que un dia sin precio hereda el ultimo conocido — y los dias
+   ANTERIORES al primer precio cargado heredan ese primero. Sin esto, la
+   facturacion estimada de esos dias daria cero. */
+function preciosFF(dias){
+  const out = {};
+  PR_KEYS.forEach(k=>{
+    const arr = dias.map(d => (d['pr_'+k] > 0) ? d['pr_'+k] : null);
+    let v=null; for(let i=0;i<arr.length;i++){ if(arr[i]!=null)v=arr[i]; else arr[i]=v; }
+    v=null; for(let i=arr.length-1;i>=0;i--){ if(arr[i]!=null)v=arr[i]; else arr[i]=v; }
+    out[k]=arr;
+  });
+  return out;
+}
+/* Facturacion ESTIMADA por dia: litros x precio del dia. `ok:false` si un
+   producto que SI se vendio no tiene ningun precio en todo el mes: ahi no se
+   estima nada, se dice que falta el dato. */
+function factEstimada(e){
+  const P = preciosFF(e.dias);
+  const sinPrecio = k => e.dias.some(d=>(d[k]||0)>0) && P[k].every(x=>x==null);
+  if(PRODS.some(p=>sinPrecio(p.k)) || (e.tieneGnc && sinPrecio('gnc'))) return {ok:false};
+  const liq = e.dias.map((d,i)=>{let x=0;
+    PRODS.forEach(p=>{ if(d[p.k]&&P[p.k][i]) x+=d[p.k]*P[p.k][i]; }); return x;});
+  const total = e.dias.map((d,i)=>{ let x=liq[i];
+    if(e.tieneGnc && d.gnc && P.gnc[i]) x += d.gnc*P.gnc[i];
+    if(d.ac_lts && P.aceite[i]) x += d.ac_lts*P.aceite[i];
+    return x; });
+  return {ok:true, liq:liq, total:total};
+}
+/* El % Premium incluye el GASOIL premium, no solo la nafta. El escritorio
+   documenta el bug: calcularlo con vpn solo daba 17,7% donde la planilla
+   decia 37,5%. Vive aca para que el KPI y el bloque de Mix no se despeguen. */
+function mixComb(o, gnc){
+  const nafta=(o.vpn||0)+(o.sup||0), diesel=(o.vpd||0)+(o.form||0);
+  const prem=(o.vpn||0)+(o.vpd||0), liq=nafta+diesel, g=gnc||0;
+  return {nafta:nafta, diesel:diesel, premium:prem, comun:liq-prem, liq:liq, gnc:g,
+          pctPremium: liq? prem/liq*100 : null};
+}
+const pct0 = v => v==null ? '—' : Math.round(v)+'%';
+
 const $ = s => document.querySelector(s);
 const fmt = new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
 const fmt1 = new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
@@ -840,6 +889,8 @@ function vEstacion(clave){
     return;
   }
   const dias=e.dias, ult=e.ult;
+  const fe = factEstimada(e);
+  const mixDia = mixComb(ult, ult.gnc);
   const fech = dias.map(d=>d.fecha);   // las fechas PROPIAS (puede venir corta)
   const diaProd = PRODS.map(p=>({l:p.l,c:p.c,v:ult[p.k]||0})).filter(p=>p.v);
   const mesProd = PRODS.map(p=>({l:p.l,c:p.c,v:sumaCampo(dias,p.k)})).filter(p=>p.v);
@@ -902,12 +953,15 @@ function vEstacion(clave){
 
   // Mix de combustibles del mes (como el escritorio: 3 miradas)
   const s_ = k => sumaCampo(dias,k);
-  const mixHtml = '<div class="card"><h2>Mix de combustibles</h2><div class="baj">'+mesAct+' · litros (GNC en m³)</div>'+
-    hbars([{l:'Premium (V-P + V/P D)',v:s_('vpn')+s_('vpd'),c:'#7F77DD'},
-           {l:'Común (Súper + Evolux)',v:s_('sup')+s_('form'),c:'#378ADD'}],'L',true)+
+  // Por la MISMA funcion que el KPI de arriba: si se calcularan por separado,
+  // es exactamente asi como vuelven a decir cosas distintas.
+  const mixMes = mixComb({vpn:s_('vpn'),sup:s_('sup'),vpd:s_('vpd'),form:s_('form')}, s_('gnc'));
+  const mixHtml = '<div class="card"><h2>Mix de combustibles</h2><div class="baj">'+mesAct+' · litros (GNC en m³) · '+pct0(mixMes.pctPremium)+' premium</div>'+
+    hbars([{l:'Premium (V-P + V/P D)',v:mixMes.premium,c:'#7F77DD'},
+           {l:'Común (Súper + Evolux)',v:mixMes.comun,c:'#378ADD'}],'L',true)+
     '<div style="height:8px"></div>'+
-    hbars([{l:'Nafta (V-P + Súper)',v:s_('vpn')+s_('sup'),c:'#378ADD'},
-           {l:'Gasoil (V/P D + Evolux)',v:s_('vpd')+s_('form'),c:'#1D9E75'}],'L',true)+
+    hbars([{l:'Nafta (V-P + Súper)',v:mixMes.nafta,c:'#378ADD'},
+           {l:'Gasoil (V/P D + Evolux)',v:mixMes.diesel,c:'#1D9E75'}],'L',true)+
     (e.tieneGnc?'<div style="height:8px"></div>'+
     hbars([{l:'Nafta',v:s_('vpn')+s_('sup'),c:'#378ADD'},
            {l:'Gasoil',v:s_('vpd')+s_('form'),c:'#1D9E75'},
@@ -925,6 +979,8 @@ function vEstacion(clave){
       // escaparon a la primera pasada de escapado y un <img onerror> corria.
       cams.map(c=>'<div class="nota"><div class="fu">'+esc(String(c.d).padStart(2,'0'))+'/'+esc(String(c.m).padStart(2,'0'))+
         (c.boleta?' · boleta '+esc(c.boleta):'')+'</div><b>'+fmt.format(c.litros||0)+' L</b>'+
+        // El importe pagado viaja en el JSON desde siempre y no se dibujaba.
+        (c.importe?' <b style="color:var(--txt2)">· $ '+kf(c.importe)+'</b>':'')+
         (abrev(c)?' <span style="color:var(--txt2)">— '+abrev(c)+'</span>':'')+'</div>').join('')+'</div>';
   }
 
@@ -966,6 +1022,11 @@ function vEstacion(clave){
       <div class="sub">${gncSub(e.gncDelta)}</div></div>
     <div class="kpi"><div class="lbl">Cobrado digital</div><div class="val">$ ${kf(e.fact)}</div>
       <div class="sub">MP + tarjetas + SB + red.</div></div>
+    ${fe.ok?`<div class="kpi"><div class="lbl">Facturación estimada</div>
+      <div class="val">$ ${kf(fe.total[fe.total.length-1])}</div>
+      <div class="sub">del mes: $ ${kf(suma(fe.total))}</div></div>`:''}
+    <div class="kpi"><div class="lbl">% Premium</div><div class="val">${pct0(mixDia.pctPremium)}</div>
+      <div class="sub">V-Power + V/P Diesel del día</div></div>
     <div class="kpi"><div class="lbl">Prom. del mes</div><div class="val">${fmt.format(Math.round(e.prom))} L</div>
       <div class="sub">${mesPrev}: ${e.promPrev?fmt.format(Math.round(e.promPrev))+' L/día':'s/d'}</div></div>
   </div>
