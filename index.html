@@ -102,6 +102,16 @@
   .chip{font-size:12.5px; font-weight:650; padding:5px 12px; border-radius:99px; background:var(--surf1); color:var(--txt2)}
   .chip.act{background:var(--acc-soft); color:var(--acc)}
 
+  /* Pestañas de la estación. La paridad con el escritorio le sumó 7 tarjetas
+     y la pantalla pasó de 3 a 5 pantallas de scroll: el escritorio se topó
+     con lo mismo el 11-ago y lo cortó en sub-pestañas. Son grandes al dedo
+     (44 px de alto), que es lo que PORT-54 reclama para el resto. */
+  .tabs{display:flex; gap:6px; margin:14px 0 12px; position:sticky; top:57px;
+    z-index:5; background:var(--bg); padding:6px 0}
+  .tab{flex:1; min-height:44px; font-size:13.5px; font-weight:700; border-radius:10px;
+    background:var(--surf1); color:var(--txt2); border:1px solid transparent}
+  .tab.act{background:var(--acc-soft); color:var(--acc); border-color:var(--acc)}
+
   .leyenda{display:flex; flex-direction:column; gap:6px; margin-top:10px}
   .leyenda .it{display:flex; align-items:center; gap:8px; font-size:13px}
   .leyenda .sw{width:11px; height:11px; border-radius:3px; flex:none}
@@ -940,6 +950,10 @@ function vGeneral(){
   <div class="card"><h2>Combustibles del día</h2><div class="baj">Litros por producto · ${diaLbl(fechaMax)} (GNC en su KPI, en m³)</div>
     ${donut(diaProdG)}</div>
 
+  ${mediosDia.length?`<div class="card"><h2>Medios de pago del día</h2>
+    <div class="baj">Todo el grupo · ${diaLbl(fechaMax)} · con efectivo</div>
+    ${hbars(mediosDia,'$',true)}</div>`:''}
+
   <div class="divisor">Del mes</div>
 
   ${proyCard(suma(grupoDia), grupoDia.filter(v=>v>0).length, Math.round(suma(grupoPrev.map(d=>d.liq))), 'Todo el grupo')}
@@ -957,10 +971,6 @@ function vGeneral(){
     <div class="chips"><button class="chip act" data-m="liq">Líquidos</button><button class="chip" data-m="gnc">Con GNC</button></div>
     <div class="baj" id="gCombBaj">Litros por producto</div>
     <div class="cdonut">${donut(mesProd)}</div></div>
-
-  ${mediosDia.length?`<div class="card"><h2>Medios de pago del día</h2>
-    <div class="baj">Todo el grupo · ${diaLbl(fechaMax)} · con efectivo</div>
-    ${hbars(mediosDia,'$',true)}</div>`:''}
 
   <div class="card"><h2>Medios de pago del mes</h2><div class="baj">Todo el grupo · ${mesAct}</div>
     ${hbars(medios,'$',true)}</div>
@@ -1239,13 +1249,21 @@ function vEstacion(clave){
       '<div class="leyfr">'+codigos.map(c=>'<span style="background:'+frColor(c)+'">'+esc(c)+'</span>').join('')+'</div></div>';
   }
 
+  // Solo hay pestaña Personal si hay algo que mostrar en ella.
+  const hayPersonal = !!(personalHtml || calHtml);
   const html = `
   <button class="volver" data-ruta="#general">‹ Vista general</button>
   <div class="est-cab"><span class="sem"></span><h1>${e.nombre}</h1>
     <span class="tag">${esc(e.enc)}</span>${ult.cambio?'<span class="tag" style="background:var(--warn-bg);color:var(--warn)">Cambio de precio</span>':''}${
     e.fresca?'':'<span class="tag" style="background:var(--warn-bg);color:var(--warn)">Última planilla: '+diaLbl(e.ult.fecha)+'</span>'}</div>
 
-  <div class="divisor">Del día</div>
+  <div class="tabs" id="eTabs">
+    <button class="tab act" data-g="dia">Del día</button>
+    <button class="tab" data-g="mes">Del mes</button>
+    ${hayPersonal?`<button class="tab" data-g="per">Personal</button>`:''}
+  </div>
+
+  <div class="gr" data-g="dia">
   <div class="kpis">
     <div class="kpi"><div class="lbl">Litros · ${diaLbl(e.ult.fecha)}</div><div class="val">${fmt.format(e.liq)} L</div>
       <div class="sub">${deltaTxt(e.delta)}</div></div>
@@ -1266,8 +1284,6 @@ function vEstacion(clave){
     <div class="chips"><button class="chip act" data-m="dia">El día</button><button class="chip" data-m="mes">El mes</button></div>
     <div class="cdonut">${donut(diaProd)}</div></div>
 
-  ${personalHtml}
-
   ${preciosHtml}
 
   ${zonaHtml}
@@ -1278,7 +1294,12 @@ function vEstacion(clave){
 
   ${tanquesHtml}
 
-  <div class="divisor">Del mes</div>
+  ${mediosDia.length?`<div class="card"><h2>Medios de pago del día</h2>
+    <div class="baj">${e.nombre} · ${diaLbl(e.ult.fecha)} · con efectivo</div>
+    ${hbars(mediosDia,'$',true)}</div>`:''}
+  </div>
+
+  <div class="gr" data-g="mes" hidden>
 
   ${proyCard(suma(e.serie), e.serie.filter(v=>v>0).length, Math.round(suma(e.prev.map(d=>d.liq))), e.nombre)}
 
@@ -1304,10 +1325,6 @@ function vEstacion(clave){
   <div class="card"><h2>Por día de la semana</h2><div class="baj">Promedio de litros · ${mesAct}</div>
     ${hbars(porDowE,'L')}</div>
 
-  ${mediosDia.length?`<div class="card"><h2>Medios de pago del día</h2>
-    <div class="baj">${e.nombre} · ${diaLbl(e.ult.fecha)} · con efectivo</div>
-    ${hbars(mediosDia,'$',true)}</div>`:''}
-
   <div class="card"><h2>Medios de pago del mes</h2><div class="baj">${e.nombre} · ${mesAct}</div>
     ${medios.length?hbars(medios,'$',true):'<p class="baj">La planilla no trae el desglose.</p>'}</div>
 
@@ -1327,8 +1344,13 @@ function vEstacion(clave){
       ${acumB.length?'<span style="color:'+PREV_C+'"><i></i> '+mesPrev+'</span>':''}</div></div>
 
   ${obsHtml}
+  </div>
 
-  ${calHtml}`;
+  ${hayPersonal?`<div class="gr" data-g="per" hidden>
+  ${personalHtml}
+
+  ${calHtml}
+  </div>`:''}`;
   $('#vista').innerHTML = html;
   const ev=$('#eVentas'); const db=dayBars(fech, e.serie, {linea2:e.promPrev||0});
   ev.querySelector('.cch').innerHTML=db.svg;
@@ -1342,6 +1364,22 @@ function vEstacion(clave){
     const ep=$('#ePerL');
     ep.querySelector('.cch').innerHTML=dayBars(fech, perL, {color:'#EF9F27'}).svg;
     tocable(ep, fech, perL, '$');
+  }
+  // Pestañas: se recuerda la elegida, como hace el escritorio con panelDetTab.
+  // Si la guardada no existe en esta estación (Personal sin francos), cae en
+  // «Del día» en vez de dejar la pantalla vacía.
+  {
+    const tabs=$('#eTabs'); const grs=document.querySelectorAll('.gr');
+    const pintar = g => {
+      document.querySelectorAll('#eTabs .tab').forEach(b=>b.classList.toggle('act', b.dataset.g===g));
+      grs.forEach(x=>{ if(x.dataset.g===g) x.removeAttribute('hidden'); else x.setAttribute('hidden',''); });
+    };
+    const guardada = lsGet('ce_tab');
+    if(guardada && document.querySelector('.gr[data-g="'+guardada+'"]')) pintar(guardada);
+    tabs.addEventListener('click', evn=>{
+      const b=evn.target.closest('.tab'); if(!b)return;
+      lsSet('ce_tab', b.dataset.g); pintar(b.dataset.g);
+    });
   }
   $('#eComb').addEventListener('click', evn=>{
     const c=evn.target.closest('.chip'); if(!c)return;
