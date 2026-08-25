@@ -12,8 +12,12 @@ solo existe del lado de como se ve:
     perdieron su separacion. Todo el JavaScript seguia en verde.
   - En el celular EN HORIZONTAL las tres pestanas quedaron como columnas de la
     grilla y se estiraron a **1.304 px de alto**. Tambien en verde.
+  - Las pestanas **dejaron de esconder nada**: el `display:flex` que arreglo lo
+    primero le gana por especificidad al `[hidden]` del navegador, asi que los
+    cuatro grupos se dibujaban uno abajo del otro y tocar una pestana solo la
+    pintaba. La pagina media 5.797 px de alto en vez de 3.252. En verde otra vez.
 
-Los dos los vio Ivan en el telefono, con el panel ya publicado. Cada
+Los tres los vio Ivan en el telefono, con el panel ya publicado. Cada
 comprobacion de aca es un defecto que paso de verdad, no una precaucion.
 
 Necesita Playwright (`pip install playwright && playwright install chromium`).
@@ -73,6 +77,17 @@ MEDIR = """() => {
       ejes.push((h ? h.textContent.slice(0, 24) : '?') + ': ' + et.join('/'));
     }
   });
+  // Las pestanas: tocar una tiene que dejar A LA VISTA UN SOLO grupo, el suyo.
+  // El `hidden` que las esconde es un ATRIBUTO, y la regla `.gr{display:flex}`
+  // le gana a la del navegador (`[hidden]{display:none}`) por especificidad:
+  // con eso los cuatro grupos quedaban dibujados uno abajo del otro y la
+  // pestana solo se pintaba. Se mide el alto real, que es lo que se ve.
+  const act = document.querySelector('#eTabs .tab.act');
+  const grupos = {
+    act: act ? act.dataset.g : null,
+    visibles: [...document.querySelectorAll('.gr')]
+      .filter(x => x.getBoundingClientRect().height > 0).map(x => x.dataset.g),
+  };
   const t = document.querySelector('#eTabs');
   const cortados = [];
   document.querySelectorAll('.hb .n, .card h2').forEach(el => {
@@ -80,7 +95,7 @@ MEDIR = """() => {
   });
   return {
     chicos, huecos, cortados,
-    ejes,
+    ejes, grupos,
     pestanas: t ? Math.round(t.getBoundingClientRect().height) : null,
     desborde: document.documentElement.scrollWidth - window.innerWidth,
   };
@@ -168,6 +183,12 @@ def main() -> int:
                         check(not malos,
                               f"{d}: las tarjetas apiladas se separan"
                               + (f" — {len(malos)} pegadas: {malos[:4]}" if malos else ""))
+                        if pestanas:
+                            g = m["grupos"]
+                            check(g["visibles"] == [g["act"]],
+                                  f"{d}: a la vista queda solo el grupo de la "
+                                  f"pestana elegida ({g['act']}) — se ven "
+                                  + (", ".join(g["visibles"]) or "ninguno"))
                         if m["pestanas"] is not None:
                             check(m["pestanas"] <= MAXIMO_PESTANAS,
                                   f"{d}: la barra de pestanas es una fila "

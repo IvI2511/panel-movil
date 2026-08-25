@@ -122,6 +122,15 @@
      hijas directas de .wrap perdieron su `gap`: quedaron pegadas, 0 px entre
      una y otra. El grupo repite el ritmo del contenedor. */
   .gr{display:flex; flex-direction:column; gap:14px}
+  /* Y esta linea es la que hace que las pestanas SIRVAN. Esconderlas es ponerle
+     el atributo `hidden` al grupo, que apaga por la regla del navegador
+     (`[hidden]{display:none}`) — pero cualquier `display` de la hoja de estilos
+     le gana, porque el autor le gana al navegador. O sea que el `display:flex`
+     de arriba (y el `display:grid` del ancho grande, mas abajo) dibujaban los
+     cuatro grupos uno abajo del otro: la pestana se pintaba y no pasaba nada
+     mas. `.gr[hidden]` tiene mas especificidad que `.gr`, asi que gana en los
+     dos anchos sin importar el orden. */
+  .gr[hidden]{display:none}
 
   .leyenda{display:flex; flex-direction:column; gap:6px; margin-top:10px}
   .leyenda .it{display:flex; align-items:center; gap:8px; font-size:13px}
