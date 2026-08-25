@@ -1576,4 +1576,19 @@ render();
 return true;
 }
 cargar();
+
+/* El service worker (PORT-52): sin el, sin señal el navegador ni llega a bajar
+   esta página y la copia local nunca se lee. Va a la RED PRIMERO --ver el
+   encabezado de sw.js--, así que un push se sigue viendo en la próxima
+   recarga y no hay forma de quedarse clavado en una versión vieja.
+
+   Se registra DESPUÉS de cargar() y no antes: el panel tiene que dibujarse
+   aunque esto falle. Y va dentro de un try: en un navegador sin service
+   workers, o abriendo el archivo con doble clic (protocolo file:), el registro
+   tira una excepción que, suelta acá, se llevaría puesta la última línea del
+   script. */
+if('serviceWorker' in navigator){
+  try{ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
+  catch(e){ /* que no lo tenga no es un problema: sin senal no abre, nada mas */ }
+}
 </script>
