@@ -1721,6 +1721,40 @@ seccion('PORT-37 - el minimercado en el celular');
 }
 
 // ===================================================================
+seccion('el mes no es una opcion adentro del dia');
+// ===================================================================
+{
+  // El escritorio tiene DOS tarjetas, detPieDia en «Del dia» y detPie en «Del
+  // mes». Aca habia una sola en «Del dia» con un selector El dia / El mes: el
+  // mes escondido como opcion de la pestaña equivocada.
+  const grupo = (h, g) => (h.split('class="gr" data-g="' + g + '"')[1] || '').split('class="gr"')[0];
+  const d = fx.base();
+  const est = d.estaciones.find(e => e.clave === 'adrogue');
+  const ult = est.dias[est.dias.length - 1];
+  const nf = n => n.toLocaleString('es-AR', {maximumFractionDigits: 0});
+  const dia = nf(ult.sup), mes = nf(est.dias.reduce((a, x) => a + (x.sup || 0), 0));
+  check(dia !== mes,
+    'guarda: el super del dia (' + dia + ' L) y el del mes (' + mes + ' L) dan distinto, ' +
+    'si no el check no distinguiria una tarjeta de la otra');
+
+  const h = irA(correr(d), '#est/adrogue');
+  const gDia = grupo(h, 'dia'), gMes = grupo(h, 'mes');
+  check(!!gDia && !!gMes, 'guarda: los dos grupos existen');
+
+  check(sinTags(gDia).indexOf('Combustibles del día') >= 0,
+    '«Del día» tiene la tarjeta del dia');
+  check(gDia.indexOf('>' + dia + ' L<') >= 0 && gDia.indexOf('>' + mes + ' L<') < 0,
+    'y dibuja el dia (' + dia + ' L), no el mes');
+  check(sinTags(gMes).indexOf('Combustibles del mes') >= 0,
+    '«Del mes» tiene la tarjeta del mes');
+  check(gMes.indexOf('>' + mes + ' L<') >= 0,
+    'y dibuja el mes (' + mes + ' L)');
+
+  check(gDia.indexOf('data-m="mes"') < 0 && sinTags(gDia).indexOf('El mes') < 0,
+    'y en «Del día» ya no queda el selector que metia el mes adentro del dia');
+}
+
+// ===================================================================
 seccion('el resumen de los minimercados en la vista general');
 // ===================================================================
 {

@@ -1562,9 +1562,9 @@ function vEstacion(clave){
       <div class="sub">${mesPrev}: ${e.promPrev?fmt.format(Math.round(e.promPrev))+' L/día':'s/d'}</div></div>
   </div>
 
-  <div class="card" id="eComb"><h2>Combustibles</h2>
-    <div class="chips"><button class="chip act" data-m="dia">El día</button><button class="chip" data-m="mes">El mes</button></div>
-    <div class="cdonut">${donut(diaProd)}</div></div>
+  <div class="card"><h2>Combustibles del día</h2>
+    <div class="baj">Litros por producto · ${diaLbl(e.ult.fecha)} (GNC en su KPI, en m³)</div>
+    ${donut(diaProd)}</div>
 
   ${preciosHtml}
 
@@ -1601,6 +1601,10 @@ function vEstacion(clave){
     <div class="lectura">Tocá una barra para ver el día.</div></div>`:''}
 
   ${mixHtml}
+
+  <div class="card"><h2>Combustibles del mes</h2>
+    <div class="baj">Litros líquidos por producto · ${mesAct}</div>
+    ${donut(mesProd)}</div>
 
   ${margenHtml}
 
@@ -1676,11 +1680,6 @@ function vEstacion(clave){
       lsSet('ce_tab', b.dataset.g); pintar(b.dataset.g);
     });
   }
-  $('#eComb').addEventListener('click', evn=>{
-    const c=evn.target.closest('.chip'); if(!c)return;
-    document.querySelectorAll('#eComb .chip').forEach(x=>x.classList.toggle('act',x===c));
-    $('#eComb .cdonut').innerHTML = donut(c.dataset.m==='dia'?diaProd:mesProd);
-  });
 }
 
 /* =================== navegacion =================== */
