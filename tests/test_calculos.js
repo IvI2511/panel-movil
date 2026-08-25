@@ -7,9 +7,10 @@
  * fijar los casos raros —el precio que falta, el camión sin importe, la
  * lectura del puente salteada— sin armar una pantalla entera alrededor.
  *
- * Los números salen de datos REALES (Adrogué y Big Blue, julio y agosto 2026),
- * no inventados: un test con números redondos no distingue una fórmula bien
- * escrita de una que casualmente da lo mismo.
+ * Los números no son redondos a propósito: un test con 100 y 200 no distingue
+ * una fórmula bien escrita de una que casualmente da lo mismo. Pero tampoco son
+ * los reales de nadie — este repo es público (lo necesita GitHub Pages) y el
+ * historial de git no se borra.
  */
 'use strict';
 const C = require('../calculos.js');
