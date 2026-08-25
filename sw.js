@@ -40,6 +40,10 @@ const VERSION = 'panel-2026-08-25';
 const ESQUELETO = [
   './',
   './index.html',
+  // Lo mas importante de la lista despues del index: la pagina lo carga como
+  // <script src> y sin el no hay una sola cuenta. Si esto faltara, sin senal
+  // el panel abriria y no dibujaria nada.
+  './calculos.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

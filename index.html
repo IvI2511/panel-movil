@@ -10,6 +10,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="calculos.js"></script>
 <style>
   /* Tokens heredados del panel de escritorio (src/static/panel.html) */
   :root{
@@ -571,73 +572,37 @@ const MEDIOS = [
    paneles se separaron en primer lugar.
    La unica diferencia es la forma del dato: el escritorio los lee de
    `d.precios[k]` y aca vienen aplanados como `d.pr_vpn`. */
+/* Las cuentas viven en calculos.js, compartido con el panel de escritorio.
+   Acá sólo se traducen las formas: el módulo recibe series de números y el
+   JSON del celular trae los precios aplanados como `d.pr_vpn`. Ver el
+   encabezado de calculos.js para por qué es así y no al revés. */
 const PR_KEYS = ['vpn','sup','vpd','form','gnc','aceite'];
-/* Arrastre en los DOS sentidos: el encargado anota el precio solo cuando
-   cambia, asi que un dia sin precio hereda el ultimo conocido — y los dias
-   ANTERIORES al primer precio cargado heredan ese primero. Sin esto, la
-   facturacion estimada de esos dias daria cero. */
 function preciosFF(dias){
   const out = {};
-  PR_KEYS.forEach(k=>{
-    const arr = dias.map(d => (d['pr_'+k] > 0) ? d['pr_'+k] : null);
-    let v=null; for(let i=0;i<arr.length;i++){ if(arr[i]!=null)v=arr[i]; else arr[i]=v; }
-    v=null; for(let i=arr.length-1;i>=0;i--){ if(arr[i]!=null)v=arr[i]; else arr[i]=v; }
-    out[k]=arr;
-  });
+  PR_KEYS.forEach(k=>{ out[k] = Calculos.rellenarPrecios(dias.map(d=>d['pr_'+k]||0)); });
   return out;
 }
-/* Facturacion ESTIMADA por dia: litros x precio del dia. `ok:false` si un
-   producto que SI se vendio no tiene ningun precio en todo el mes: ahi no se
-   estima nada, se dice que falta el dato. */
+/* Facturación estimada del mes de una estación. El aceite y el GNC entran al
+   total pero no al líquido: el precio por litro del líquido se calcula sobre
+   esa base y meterlos lo ensuciaría. */
 function factEstimada(e){
-  const P = preciosFF(e.dias);
-  const sinPrecio = k => e.dias.some(d=>(d[k]||0)>0) && P[k].every(x=>x==null);
-  if(PRODS.some(p=>sinPrecio(p.k)) || (e.tieneGnc && sinPrecio('gnc'))) return {ok:false};
-  const liq = e.dias.map((d,i)=>{let x=0;
-    PRODS.forEach(p=>{ if(d[p.k]&&P[p.k][i]) x+=d[p.k]*P[p.k][i]; }); return x;});
-  const total = e.dias.map((d,i)=>{ let x=liq[i];
-    if(e.tieneGnc && d.gnc && P.gnc[i]) x += d.gnc*P.gnc[i];
-    if(d.ac_lts && P.aceite[i]) x += d.ac_lts*P.aceite[i];
-    return x; });
-  return {ok:true, liq:liq, total:total};
+  const litros = {}, precios = {};
+  PRODS.forEach(p=>{ litros[p.k] = e.dias.map(d=>d[p.k]||0);
+                     precios[p.k] = e.dias.map(d=>d['pr_'+p.k]||0); });
+  if(e.tieneGnc){ litros.gnc = e.dias.map(d=>d.gnc||0);
+                  precios.gnc = e.dias.map(d=>d.pr_gnc||0); }
+  if(e.dias.some(d=>d.ac_lts)){ litros.aceite = e.dias.map(d=>d.ac_lts||0);
+                                precios.aceite = e.dias.map(d=>d.pr_aceite||0); }
+  return Calculos.factEstimada(litros, precios, PRODS.map(p=>p.k));
 }
-/* El % Premium incluye el GASOIL premium, no solo la nafta. El escritorio
-   documenta el bug: calcularlo con vpn solo daba 17,7% donde la planilla
-   decia 37,5%. Vive aca para que el KPI y el bloque de Mix no se despeguen. */
-function mixComb(o, gnc){
-  const nafta=(o.vpn||0)+(o.sup||0), diesel=(o.vpd||0)+(o.form||0);
-  const prem=(o.vpn||0)+(o.vpd||0), liq=nafta+diesel, g=gnc||0;
-  return {nafta:nafta, diesel:diesel, premium:prem, comun:liq-prem, liq:liq, gnc:g,
-          pctPremium: liq? prem/liq*100 : null};
+const mixComb = (o, gnc) => Calculos.mix(o, gnc);
+/* El puente de GNC. La divergencia deliberada con el escritorio --no comparar
+   períodos distintos-- está adentro del módulo, con su explicación. */
+function gncCtrl(e){
+  if(!e.tieneGnc) return null;
+  return Calculos.puenteGnc(e.dias.map(d=>({fecha:d.fecha, pu:d.pu, gnc:d.gnc})));
 }
 const pct0 = v => v==null ? '—' : Math.round(v)+'%';
-/* Control del GNC: el consumo que marca el PUENTE (lectura de hoy menos la
-   anterior) contra lo que marcaron los surtidores. `pu` es un contador
-   acumulado y viaja en el JSON desde siempre sin que nadie lo leyera.
-   Copiada de gncCtrl() del escritorio, incluida la busqueda hacia atras: no
-   todos los dias traen lectura, asi que se resta contra la ULTIMA que haya.
-   Va SIN semaforo: es dato de referencia por decision del usuario
-   (22-jul-2026, v1.4.1). Sin colores por rango, sin alertas. */
-function gncCtrl(e){
-  if(!e.tieneGnc || !e.dias.length) return null;
-  const L = e.dias[e.dias.length-1];
-  let prev = null;
-  for(let i=e.dias.length-2;i>=0;i--){ if(e.dias[i].pu>0){ prev=e.dias[i]; break; } }
-  if(!L.pu || !prev || L.pu<=prev.pu) return {nd:true, gnc:L.gnc};
-  const consumo = L.pu - prev.pu;
-  // Cuantos dias abarca el consumo del puente. Si el encargado no anoto la
-  // lectura algun dia, la resta cubre mas de una jornada y compararla contra
-  // los surtidores de UN solo dia da una diferencia enorme y sin sentido. El
-  // panel de escritorio la muestra igual; aca se prefiere no afirmar nada y
-  // decir que el periodo no coincide.
-  const dd = (a,b)=>Math.round((new Date(b.slice(0,4),+b.slice(5,7)-1,b.slice(8,10))
-                              - new Date(a.slice(0,4),+a.slice(5,7)-1,a.slice(8,10)))/86400000);
-  const span = dd(prev.fecha, L.fecha);
-  if(span !== 1) return {consumo:consumo, gnc:L.gnc, span:span, desde:prev.fecha};
-  const dif = consumo - (L.gnc||0);
-  return {consumo:consumo, dif:dif, pct: L.gnc? dif/L.gnc*100 : 0, gnc:L.gnc};
-}
-
 const $ = s => document.querySelector(s);
 const fmt = new Intl.NumberFormat('es-AR',{maximumFractionDigits:0});
 const fmt1 = new Intl.NumberFormat('es-AR',{maximumFractionDigits:1});
@@ -773,6 +738,12 @@ const estPrev = ESTS.find(e=>e.prev.length);
 const mesPrev = estPrev ? MESN[Number(estPrev.prev[0].fecha.slice(5,7))-1] : 'mes pasado';
 const grupoDia = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).liq||0)));
 const grupoGnc = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).gnc||0)));
+/* ¿Viaja la lectura del puente? Si NINGUNA estación tiene una sola, el campo
+   no lo manda el programa que arma el paquete —pasa con las versiones
+   anteriores— y no es que los encargados no la anoten. Decir «falta la
+   lectura en la planilla de este día» en las cuatro estaciones todos los días
+   sería culpar a la planilla de algo que no es suyo. */
+const HAY_PUENTE = ESTS.some(e=>e.dias.some(d=>d.pu>0));
 const grupoPrev = (()=>{ // julio, dia a dia (hasta 31)
   // SOLO las que aportaron algo este mes. Si no, el numerador (agosto) tiene
   // cinco estaciones y el denominador (julio) tiene seis: la que no cargo nada
@@ -1138,7 +1109,7 @@ function vEstacion(clave){
   // Control del puente de GNC.
   let gncHtml='';
   {
-    const g = gncCtrl(e);
+    const g = HAY_PUENTE ? gncCtrl(e) : null;
     if(g && !g.nd)
       gncHtml = '<div class="card"><h2>GNC · puente vs. surtidores</h2>'+
         '<div class="baj">'+diaLbl(e.ult.fecha)+' · dato de referencia, sin semáforo</div>'+
