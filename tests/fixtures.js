@@ -36,9 +36,15 @@ function dia(n, {liq, gnc = 0, fact = 0, enc = 'Encargado', obs = ''} = {}) {
   return d;
 }
 
-const prevDias = (base) =>
-  Array.from({length: 31}, (_, i) =>
-    ({fecha: PREV + '-' + String(i + 1).padStart(2, '0'), liq: base + (i % 5) * 100}));
+/* El mes anterior. `gnc` viaja desde el 25-ago: hasta entonces `prev` traia
+   solo fecha y liq, y por eso la proyeccion de GNC decia «Cerró julio: s/d»
+   siempre, aunque julio tuviera GNC. Se vio en produccion. */
+const prevDias = (base, gncBase = 0) =>
+  Array.from({length: 31}, (_, i) => {
+    const d = {fecha: PREV + '-' + String(i + 1).padStart(2, '0'), liq: base + (i % 5) * 100};
+    if (gncBase) d.gnc = gncBase + (i % 4) * 50;
+    return d;
+  });
 
 /* dias 1..hasta. `gncDe(n)` decide cuanto GNC vendio ese dia. */
 function mes(hasta, {base, gncDe = () => 0, enc = 'Encargado'} = {}) {
@@ -68,7 +74,7 @@ const base = () => ({
   estaciones: [
     // Al dia, con GNC todos los dias. El caso normal.
     {clave: 'adrogue', nombre: 'Adrogue', dias: mes(HOY, {base: 9000, gncDe: () => 1400, enc: 'Aníbal'}),
-     prev: prevDias(8600),
+     prev: prevDias(8600, 1300),
      // Los camiones traen el importe pagado: es lo que permite el margen bruto.
      camiones: [{d: 5, m: 8, litros: 30000, boleta: 'B-1001', importe: 66000000,
                  'SUPER': 20000, 'V-POWER': 10000},
@@ -77,13 +83,13 @@ const base = () => ({
     // Al dia y CON GNC el mes entero, pero el ULTIMO dia el compresor no
     // vendio: es el caso de PORT-44 #2.
     {clave: 'bigblue', nombre: 'Big Blue', dias: mes(HOY, {base: 7400, gncDe: n => (n === HOY ? 0 : 1100), enc: 'Delia'}),
-     prev: prevDias(7100)},
+     prev: prevDias(7100, 1050)},
     // ATRASADA 3 dias y con un ultimo dia muy alto: entra al top 3 del ticker
     // con un dato viejo. Es el caso de PORT-44 #3.
     {clave: 'temperley', nombre: 'Temperley', dias: mes(HOY - 3, {base: 6200, gncDe: () => 900, enc: 'Tito'}).concat([]),
      prev: prevDias(6000)},
     {clave: 'gasoil', nombre: 'Gasoil', dias: mes(HOY, {base: 8100, gncDe: () => 1250, enc: 'Ramona'}),
-     prev: prevDias(7900)},
+     prev: prevDias(7900, 1200)},
     // Sin GNC nunca (como las Dellepiane reales).
     {clave: 'delle1', nombre: 'Dellepiane 1', dias: mes(HOY, {base: 5300, enc: 'Elsa'}),
      prev: prevDias(5100)},
@@ -274,6 +280,7 @@ function paqueteViejo() {
       ['pg_mpago', 'pg_shellbox', 'pg_redencion', 'pg_flota', 'pg_ctacte',
        'pg_consumo'].forEach(k => delete x[k]);
     });
+    (e.prev || []).forEach(x => { delete x.gnc; });          // el mes anterior, sin GNC
     (e.camiones || []).forEach(c => { delete c.importe; });
   });
   return d;

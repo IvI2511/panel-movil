@@ -1071,9 +1071,18 @@ seccion('Tablet: el look del escritorio, sin tocar el celular');
 {
   // El shim no evalua media queries, asi que esto se mide sobre el CSS. Lo
   // visual se verifico en Chromium a 390, 820, 1180 y 1560 px.
+  // Se corta BALANCEANDO llaves y no con un recorte fijo de 1.400 caracteres:
+  // agregar dos reglas al principio del bloque empujaba las de mas abajo
+  // afuera de la ventana y el check fallaba sin que el CSS hubiera cambiado.
   const mq = (ancho) => {
     const i = HTML.indexOf('@media (min-width: ' + ancho + 'px)');
-    return i < 0 ? '' : HTML.slice(i, i + 1400);
+    if (i < 0) return '';
+    let nivel = 0, j = HTML.indexOf('{', i);
+    for (let k = j; k < HTML.length; k++) {
+      if (HTML[k] === '{') nivel++;
+      else if (HTML[k] === '}' && --nivel === 0) return HTML.slice(i, k + 1);
+    }
+    return HTML.slice(i);
   };
 
   const t = mq(760);
@@ -1384,6 +1393,59 @@ seccion('Paridad: medios de pago del dia y precio promedio del litro');
   const sp = irA(correr(fx.unaSinPrecios()), '#est/gasoil');
   check(sp.indexOf('Precio promedio del litro') < 0,
     'y una estacion sin precios no muestra un promedio inventado');
+}
+
+// ===================================================================
+seccion('Dos defectos vistos en produccion el 25-ago');
+// ===================================================================
+// El ALTO de las barras no se puede medir aca: el SVG lo inyecta el JS despues
+// del innerHTML y el shim no lo sigue. La cuenta de la escala vive en
+// calculos.js y se prueba ahi (`escalaBarras`); esto mira que el panel la use
+// donde corresponde, y el resto se verifica en Chromium.
+{
+  const d = fx.conMinimercado();
+  const e = d.estaciones.find(x => x.clave === 'adrogue');
+  const est = irA(correr(d), '#est/adrogue');
+  const SC = require('fs').readFileSync('index.html', 'utf8');
+
+  // ---- 1. El grafico del precio por litro salia como un bloque naranja ----
+  // Los precios del mes van de ~2.280 a ~2.320: contra una escala desde CERO
+  // las 23 barras llegan al mismo tope y no se ve una sola fluctuacion.
+  const iPer = SC.indexOf("$('#ePerL')");
+  const bloquePer = iPer < 0 ? '' : SC.slice(iPer, iPer + 700);
+  check(bloquePer.indexOf('desdeMinimo:true') >= 0,
+    'el grafico del precio pide la escala truncada, que es la que deja ver la fluctuacion');
+  check(bloquePer.indexOf('no en cero') >= 0,
+    'y avisa en pantalla que la escala no arranca en cero: truncar EXAGERA las ' +
+    'diferencias y hay que decirlo');
+  // El de litros NO: ahi el cero es la referencia y truncarlo mentiria.
+  const iVen = SC.indexOf("$('#eVentas')");
+  check(SC.slice(iVen, iVen + 300).indexOf('desdeMinimo') < 0,
+    'el de litros vendidos sigue arrancando en cero, que ahi el cero SI es la referencia');
+
+  // ---- 2. La proyeccion de GNC decia «Cerró julio: s/d» ----
+  // El `prev` que viajaba traia solo fecha y liq, sin gnc. Al agregar la
+  // proyeccion de GNC nadie miro eso -- estaba hasta anotado en la memoria del
+  // proyecto -- asi que el mes anterior era s/d siempre.
+  check(e.prev.length > 0 && e.prev.some(p => p.gnc > 0),
+    'guarda: el mes anterior del fixture trae GNC (que es lo que faltaba viajar)');
+  const cg = (est.split('Proyección de cierre · GNC')[1] || '').slice(0, 900);
+  check(cg.length > 0, 'guarda: la tarjeta de proyeccion de GNC existe');
+  check(sinTags(cg).indexOf('s/d') < 0,
+    'la proyeccion de GNC ya no dice «s/d» del mes pasado');
+  const cerro = Math.round(e.prev.reduce((a2, p) => a2 + (p.gnc || 0), 0));
+  const ab = x => x >= 1e6 ? (x/1e6).toLocaleString('es-AR',{maximumFractionDigits:1}) + ' M'
+              : x >= 1000 ? (x/1000).toLocaleString('es-AR',{maximumFractionDigits:1}) + ' k'
+              : String(x);
+  check(sinTags(cg).indexOf(ab(cerro)) >= 0,
+    'sino cuanto cerro de verdad (' + ab(cerro) + ' m³)');
+
+  // Con un paquete viejo, que no manda el gnc del mes pasado, no puede
+  // inventarlo: ahi «s/d» es la verdad.
+  const viejo = fx.paqueteViejo();
+  const cgv = (irA(correr(viejo), '#est/adrogue').split('Proyección de cierre · GNC')[1] || '');
+  check(cgv.length === 0 || sinTags(cgv.slice(0, 900)).indexOf('s/d') >= 0,
+    'pero con un paquete que no lo manda, sigue diciendo s/d en vez de inventar un cero');
 }
 
 // ===================================================================

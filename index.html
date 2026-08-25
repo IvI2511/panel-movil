@@ -118,6 +118,10 @@
   .tab{flex:1; min-height:44px; font-size:13.5px; font-weight:700; border-radius:10px;
     background:var(--surf1); color:var(--txt2); border:1px solid transparent}
   .tab.act{background:var(--acc-soft); color:var(--acc); border-color:var(--acc)}
+  /* Las tarjetas viven acá adentro desde que hay pestañas, y al dejar de ser
+     hijas directas de .wrap perdieron su `gap`: quedaron pegadas, 0 px entre
+     una y otra. El grupo repite el ritmo del contenedor. */
+  .gr{display:flex; flex-direction:column; gap:14px}
 
   .leyenda{display:flex; flex-direction:column; gap:6px; margin-top:10px}
   .leyenda .it{display:flex; align-items:center; gap:8px; font-size:13px}
@@ -297,7 +301,17 @@
     /* Lo que estructura la pagina ocupa el ancho entero; las tarjetas fluyen
        solas en las columnas que entren. */
     .wrap > .divisor, .wrap > section, .wrap > .banda,
-    .wrap > .volver, .wrap > .est-cab, .wrap > .kpis{grid-column:1/-1}
+    .wrap > .volver, .wrap > .est-cab, .wrap > .kpis,
+    .wrap > .tabs, .wrap > .gr{grid-column:1/-1}
+    /* Sin esto las pestañas eran UNA columna de la grilla y se estiraban a lo
+       alto de toda la fila: en el celular en horizontal quedaban tres botones
+       de 1.300 px. Y el grupo ocupaba la otra columna, con todo el contenido
+       apretado en media pantalla. Ahora el grupo es la grilla. */
+    .gr{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr));
+        align-content:start; gap:22px 14px}
+    /* 22 px entre filas, que es el ritmo del escritorio (sus `.panel` llevan
+       margin-bottom:24) — con 14 las tarjetas anchas quedan amontonadas. */
+    .wrap{gap:22px 14px}
     .kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
     /* El escritorio usa 230px para SUS tarjetas, pero la ficha de estacion
        del movil lleva sparkline: su grilla interna es `1fr 118px`, asi que
@@ -779,12 +793,19 @@ function ejeY(mx){ // 3 lineas de referencia "lindas"
 const kf = v => v>=1e6 ? fmt1.format(v/1e6)+' M'
               : v>=1000 ? fmt1.format(v/1000)+' k' : fmt.format(v);
 
+/* `opts.desdeMinimo` trunca el eje en vez de arrancarlo en cero. Para litros
+   vendidos el cero ES la referencia y va sin esto; para una serie de precios
+   no, y sin truncar salen todas las barras al mismo tope (se vio en
+   producción el 25-ago: un bloque naranja macizo). La cuenta vive en
+   calculos.js con su explicación. */
 function dayBars(dias, vals, opts={}){
-  const H=190, pl=34, pb=20, mx=Math.max(...vals, opts.linea2||0)*1.08;
+  const H=190, pl=34, pb=20;
+  const esc = Calculos.escalaBarras(vals, {desdeMinimo:opts.desdeMinimo,
+                                           minimoTope:opts.linea2||0});
   const bw=(W-pl-6)/vals.length;
-  const y=v=>H-pb-(v/mx)*(H-pb-12);
+  const y=v=>H-pb-((v-esc.lo)/(esc.hi-esc.lo))*(H-pb-12);
   let g='';
-  ejeY(mx).forEach(v=>{g+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-width="1"/>'+
+  esc.lineas.forEach(v=>{g+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-width="1"/>'+
     '<text x="'+(pl-5)+'" y="'+(y(v)+3)+'" text-anchor="end" font-size="10" fill="var(--txt3)">'+kf(v)+'</text>';});
   let b='';
   vals.forEach((v,i)=>{const x=pl+i*bw+1, h=Math.max(H-pb-y(v),1);
@@ -794,7 +815,8 @@ function dayBars(dias, vals, opts={}){
   const prom = suma(vals)/vals.length;
   let ln='<line x1="'+pl+'" x2="'+W+'" y1="'+y(prom)+'" y2="'+y(prom)+'" stroke="'+PREV_C+'" stroke-width="2" stroke-dasharray="6 5"/>';
   if(opts.linea2) ln+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(opts.linea2)+'" y2="'+y(opts.linea2)+'" stroke="'+GNC_C+'" stroke-width="2" stroke-dasharray="2 4"/>';
-  return {svg:'<svg class="ch" viewBox="0 0 '+W+' '+H+'" role="img">'+g+b+ln+lx+'</svg>', prom};
+  return {svg:'<svg class="ch" viewBox="0 0 '+W+' '+H+'" role="img">'+g+b+ln+lx+'</svg>',
+          prom, truncada:esc.truncada, desde:esc.lo};
 }
 function lineas(seriesA, seriesB, unidad){ // acumulado este mes vs pasado (x = dia del mes)
   const H=190, pl=40, pb=20;
@@ -1469,7 +1491,16 @@ function vEstacion(clave){
   }
   if(perL){
     const ep=$('#ePerL');
-    ep.querySelector('.cch').innerHTML=dayBars(fech, perL, {color:'#EF9F27'}).svg;
+    const dp=dayBars(fech, perL, {color:'#EF9F27', desdeMinimo:true});
+    ep.querySelector('.cch').innerHTML=dp.svg;
+    // Un eje truncado EXAGERA las diferencias: hay que decirlo o el que mira
+    // saca conclusiones de más.
+    if(dp.truncada){
+      const r=ep.querySelector('.ref');
+      if(r)r.innerHTML='<span style="color:'+PREV_C+'"><i></i> media del mes</span>'+
+        '<span class="baj">· la escala arranca en $ '+fmt.format(Math.round(dp.desde))+
+        ', no en cero</span>';
+    }
     tocable(ep, fech, perL, '$');
   }
   // Pestañas: se recuerda la elegida, como hace el escritorio con panelDetTab.

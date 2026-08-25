@@ -173,9 +173,58 @@
     return acumulado / diasConDatos * diasDelMes;
   }
 
+  /* La escala de un grafico de barras: hasta donde llega el eje y donde van las
+   * lineas de referencia.
+   *
+   * Por que no siempre arranca en cero. Para LITROS VENDIDOS el cero es la
+   * referencia: una barra de la mitad de alto es la mitad de venta, y truncar
+   * el eje ahi mentiria. Para un PRECIO no: los precios del litro de un mes van
+   * de 2.280 a 2.320, y contra una escala desde cero las 23 barras llegan al
+   * mismo tope y no se ve una sola fluctuacion — que es exactamente lo que se
+   * queria mirar. Se vio en produccion el 25-ago: un bloque naranja macizo.
+   *
+   * El precio de truncar el eje es que EXAGERA las diferencias, asi que el que
+   * lo usa tiene que decirlo en pantalla. La funcion devuelve `truncada` para
+   * que no se pueda olvidar.
+   */
+  function escalaBarras(vals, opts) {
+    opts = opts || {};
+    const limpios = (vals || []).filter(v => typeof v === 'number' && isFinite(v));
+    const max = limpios.length ? Math.max.apply(null, limpios) : 0;
+    const min = limpios.length ? Math.min.apply(null, limpios) : 0;
+    const tope = Math.max(max, opts.minimoTope || 0);
+    if (!opts.desdeMinimo || min <= 0 || max <= min) {
+      return {lo: 0, hi: tope * 1.08 || 1, lineas: _lineas(0, tope * 1.08 || 1),
+              truncada: false};
+    }
+    // Un margen del 20% del rango abajo y del 15% arriba: la barra mas baja
+    // queda visible en vez de aplastada contra el eje, que es el otro extremo
+    // del mismo problema.
+    const rango = max - min;
+    const lo = Math.max(0, min - rango * 0.2);
+    const hi = Math.max(max + rango * 0.15, opts.minimoTope || 0);
+    return {lo: lo, hi: hi, lineas: _lineas(lo, hi), truncada: true};
+  }
+
+  /* Tres o cuatro lineas de referencia "lindas" entre lo y hi. */
+  function _lineas(lo, hi) {
+    const rango = hi - lo;
+    if (rango <= 0) return [];
+    let p = Math.pow(10, Math.floor(Math.log10(rango)));
+    if (rango / p > 8) p *= 2;
+    if (rango / p > 8) p *= 2.5;
+    const out = [];
+    // Arranca en el primer multiplo DESPUES de lo: una linea justo sobre el
+    // piso del eje es el eje mismo, y con lo=0 quedaba un cero de adorno.
+    const desde = lo > 0 ? Math.ceil(lo / p) * p : p;
+    for (let v = desde; v <= hi; v += p) out.push(Math.round(v * 1e6) / 1e6);
+    return out.slice(0, 4);
+  }
+
   const API = {rellenarPrecios: rellenarPrecios, mix: mix,
                factEstimada: factEstimada, puenteGnc: puenteGnc,
-               margen: margen, proyeccion: proyeccion};
+               margen: margen, proyeccion: proyeccion,
+               escalaBarras: escalaBarras};
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else raiz.Calculos = API;

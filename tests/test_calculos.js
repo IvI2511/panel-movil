@@ -160,6 +160,49 @@ seccion('proyeccion — a este ritmo, cuánto cierra');
     'sin un solo día cargado no hay proyección: null, no cero');
 }
 
+// ---------------------------------------------------------------------------
+seccion('escalaBarras — cuando el cero es la referencia y cuando no');
+{
+  // El caso que se vio en produccion: los precios del litro de un mes.
+  const precios = [2298, 2310, 2295, 2321, 2305, 2312];
+  const cero = C.escalaBarras(precios);
+  const trunc = C.escalaBarras(precios, {desdeMinimo: true});
+
+  // Contra una escala desde cero, la barra mas baja mide el 99% de la mas alta.
+  const alto = (v, e) => (v - e.lo) / (e.hi - e.lo);
+  const rel = e => alto(Math.min.apply(null, precios), e) / alto(Math.max.apply(null, precios), e);
+  check(rel(cero) > 0.98,
+    'guarda: desde cero, la barra mas baja mide el ' + Math.round(rel(cero) * 100) +
+    '% de la mas alta — por eso salia un bloque macizo');
+  check(rel(trunc) < 0.5,
+    'truncada, la mas baja mide el ' + Math.round(rel(trunc) * 100) + '%: ahi se ve la fluctuacion');
+  check(trunc.truncada === true && cero.truncada === false,
+    'y avisa cual es cual, para que la pantalla lo pueda decir');
+  check(trunc.lo > 0 && trunc.lo < Math.min.apply(null, precios),
+    'el piso queda ABAJO del minimo (' + Math.round(trunc.lo) + '), no pegado: ' +
+    'una barra aplastada contra el eje es el otro extremo del mismo problema');
+  check(trunc.hi > Math.max.apply(null, precios),
+    'y el techo arriba del maximo');
+
+  // Las lineas de referencia tienen que caer adentro y ser numeros redondos.
+  check(trunc.lineas.length >= 2 && trunc.lineas.every(v => v >= trunc.lo && v <= trunc.hi),
+    'las lineas de referencia caen adentro del eje (' + trunc.lineas.join(', ') + ')');
+  check(cero.lineas.indexOf(0) < 0,
+    'y desde cero no se dibuja una linea EN cero, que es el eje mismo');
+
+  // Los casos raros no pueden devolver un eje imposible.
+  const iguales = C.escalaBarras([100, 100, 100], {desdeMinimo: true});
+  check(iguales.hi > iguales.lo,
+    'con todos los valores iguales el eje sigue teniendo alto (no divide por cero)');
+  check(C.escalaBarras([], {desdeMinimo: true}).hi > 0, 'y una serie vacia tampoco lo rompe');
+  const negativos = C.escalaBarras([-5, 10], {desdeMinimo: true});
+  check(negativos.lo === 0,
+    'con un valor negativo vuelve a arrancar en cero: truncar ahi no significaria nada');
+  check(C.escalaBarras([10, 20], {minimoTope: 500}).hi >= 500,
+    'y `minimoTope` respeta una linea de referencia mas alta que los datos ' +
+    '(la media del mes pasado, que puede estar arriba de todo)');
+}
+
 console.log('');
 if (fallas) { console.log(fallas + ' de ' + total + ' comprobaciones FALLARON'); process.exit(1); }
 console.log('las ' + total + ' comprobaciones pasaron');
