@@ -1721,6 +1721,90 @@ seccion('PORT-37 - el minimercado en el celular');
 }
 
 // ===================================================================
+seccion('el resumen de los minimercados en la vista general');
+// ===================================================================
+{
+  const card = env => {
+    const h = irA(env, '#general');
+    // Hasta la seccion que la sigue: cortar por '</div>' agarra el primer
+    // cierre anidado y deja afuera casi toda la tarjeta (los checks pasaban a
+    // fallar de a siete sin que la tarjeta tuviera nada malo).
+    return h.indexOf('id="gMini"') < 0 ? '' : h.split('id="gMini"')[1].split('<section').shift();
+  };
+
+  check(!card(correr(fx.base())),
+    'sin un solo minimercado, la tarjeta no existe (ni su divisor)');
+
+  // --- los dos en el MISMO mes: aca el total suma de verdad ---
+  const d2 = fx.dosMinis();
+  const ms = d2.estaciones.filter(e => e.minimercado).map(e => e.minimercado);
+  check(ms.length === 2 && ms[0].ym === ms[1].ym,
+    'guarda: el fixture tiene DOS minimercados y en el mismo mes (' + ms.map(m => m.ym).join(', ') + ')');
+  const c2 = sinTags(card(correr(d2)));
+  check(!!c2, 'guarda: con datos, la tarjeta esta');
+
+  const sum = k => ms.reduce((a, m) => a + (m.r[k] || 0), 0);
+  [['ventas', 'la venta del mes'], ['ventas_netas', 'las ventas netas'],
+   ['egresos', 'lo que salio de la caja'], ['resultado', 'el margen bruto']].forEach(par => {
+    const v = '$ ' + abrevK(sum(par[0]));
+    check(c2.indexOf(v) >= 0, par[1] + ' es la SUMA de los dos (' + v + ')');
+  });
+
+  // El cociente NO se promedia. Con estas dos cifras el promedio ingenuo da
+  // 32% y la cuenta buena 33%: un punto de diferencia, que es justo lo que
+  // hace falta para que el check pruebe algo.
+  const pctBien = Math.round(sum('resultado') / sum('ventas_netas') * 100) + '%';
+  const pctProm = Math.round(ms.reduce((a, m) => a + m.r.margen, 0) / 2 * 100) + '%';
+  check(pctBien !== pctProm,
+    'guarda: la cuenta buena (' + pctBien + ') y el promedio de los margenes (' +
+    pctProm + ') dan distinto, si no el check no probaria nada');
+  check(c2.indexOf(pctBien + ' de las netas') >= 0,
+    'el margen del grupo se REHACE desde las sumas (' + pctBien + ')');
+  check(c2.indexOf(pctProm + ' de las netas') < 0,
+    'y no es el promedio de los margenes de cada uno (' + pctProm + ')');
+
+  // `resultado_neto` lo trae una sola de las dos: el total no puede pasar por
+  // el del grupo sin decir sobre cuantas se armo.
+  const conNeto = ms.filter(m => m.r.resultado_neto != null);
+  check(conNeto.length === 1 && ms.length === 2,
+    'guarda: solo 1 de los 2 minimercados trae el resultado final');
+  check(c2.indexOf('1 de 2 minimercados') >= 0,
+    'el resultado final dice sobre cuantos se armo (1 de 2)');
+
+  // --- meses distintos: el de julio NO entra al total ---
+  const d1 = fx.conMinimercado();
+  const mAd = d1.estaciones.find(e => e.clave === 'adrogue').minimercado;
+  const mBb = d1.estaciones.find(e => e.clave === 'bigblue').minimercado;
+  check(mAd.ym !== mBb.ym, 'guarda: el fixture tiene los minis en meses distintos (' +
+    mAd.ym + ' vs ' + mBb.ym + ')');
+  const c1 = sinTags(card(correr(d1)));
+  check(c1.indexOf('$ ' + abrevK(mAd.r.ventas)) >= 0 &&
+        c1.indexOf('1 de 2 con la planilla de agosto') >= 0,
+    'el total sale solo de los que comparten el mes mas nuevo (1 de 2, agosto)');
+  const mezcla = '$ ' + abrevK(mAd.r.ventas + mBb.r.ventas);
+  check(c1.indexOf(mezcla) < 0,
+    'y NO suma agosto con julio, que daria un total de ningun periodo (' + mezcla + ')');
+  check(c1.indexOf('$ ' + abrevK(mBb.r.ventas)) >= 0 && /julio/i.test(c1),
+    'pero el de julio se ve igual, aparte y con su mes');
+
+  // --- la fecha del archivo, que dice hasta cuando llega cada planilla ---
+  check(/-18-08-2026-/.test(mAd.archivo) && !/-\d{2}-\d{2}-\d{4}-/.test(mBb.archivo),
+    'guarda: un archivo del fixture trae fecha en el nombre y el otro no');
+  check(c1.indexOf('al 18/08') >= 0,
+    'el resumen dice hasta cuando llega la planilla de cada uno (al 18/08)');
+  check(sinTags(irA(correr(d1), '#est/adrogue')).indexOf('planilla al 18/08') >= 0,
+    'y la ficha de la estacion tambien');
+  // Del que no la trae no se inventa ninguna: ni un «al », ni un «—».
+  const crudo1 = card(correr(d1));
+  const bb = sinTags((crudo1.split('#est/bigblue')[1] || '').split('</button>').shift());
+  check(!!bb && bb.indexOf('al ') < 0,
+    'del que no trae fecha en el nombre no se inventa ninguna');
+
+  check(crudo1.indexOf('data-ruta="#est/adrogue"') >= 0,
+    'y cada renglon lleva al panel de esa estacion');
+}
+
+// ===================================================================
 seccion('PORT-55 - higiene de la PWA');
 // ===================================================================
 {

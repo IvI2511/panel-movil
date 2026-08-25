@@ -767,6 +767,23 @@ TOT.gncDelta = TOT.gncProm ? (TOT.gnc-TOT.gncProm)/TOT.gncProm*100 : null;
 const MESN=['enero','febrero','marzo','abril','mayo','junio','julio','agosto',
   'septiembre','octubre','noviembre','diciembre'];
 const mesAct = MESN[Number(fechaMax.slice(5,7))-1];
+/* La fecha que trae el nombre de la planilla del minimercado, como «18/08».
+
+   El archivo se llama ESTACION-DD-MM-AAAA-Minimercado-ENCARGADO.xlsx y esa
+   fecha es hasta cuando llega la planilla: es el dato que dice si lo que se
+   esta mirando es de esta manana o de hace una semana. Devuelve '' cuando el
+   nombre no la trae --pasa: `es_minimercado` del otro repo solo exige que
+   diga «minimercado», la fecha no esta garantizada-- y ahi no se muestra
+   nada, que es mejor que un «—» que parece un dato faltante en la planilla.
+
+   El patron es el mismo que usa correo.py para reconocer la venta diaria.
+   Se acepta que la fecha cierre con guion, con punto o con el fin del nombre. */
+const _RE_FECHA_MM = /-(\d{2})-(\d{2})-(\d{4})(?:[-.]|$)/;
+function fechaArchivoMM(nombre){
+  const m = _RE_FECHA_MM.exec(String(nombre||'').replace(/\.[a-z0-9]+$/i,''));
+  return m ? m[1]+'/'+m[2] : '';
+}
+
 const estPrev = ESTS.find(e=>e.prev.length);
 const mesPrev = estPrev ? MESN[Number(estPrev.prev[0].fecha.slice(5,7))-1] : 'mes pasado';
 const grupoDia = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).liq||0)));
@@ -993,6 +1010,99 @@ function factGrupo(){
   return {dia:Math.round(dia), mes:Math.round(mes), n:n};
 }
 
+/* El resumen de los minimercados del grupo, para la vista general.
+
+   El escritorio no tiene uno: alla el minimercado es una pestana de CADA
+   estacion y nunca se suman. Aca hace falta porque la vista general es la
+   pantalla que se mira primero y el mini estaba solo tres toques adentro.
+
+   LA TRAMPA: cada mini puede estar en un MES DISTINTO. La planilla del mini
+   llega por separado de la diaria, y el 1 de cada mes --a veces una semana--
+   una estacion todavia tiene la del mes pasado; por eso movil._minimercado
+   consulta `ym<=?` y no `==`. Sumar agosto con julio da un total que no es de
+   ningun periodo. Asi que los totales salen SOLO de los que comparten el mes
+   mas nuevo y los demas se listan aparte con el suyo: se ven, pero no entran.
+
+   Y `margen` NO se promedia, que es el error facil: es un cociente por
+   estacion. El del grupo se rehace desde las sumas (resultado / netas). */
+function miniGrupo(){
+  const con = ESTS.filter(e=>e.minimercado && e.minimercado.r);
+  if(!con.length) return null;
+  // 'YYYY-MM' ordena solo. El `||''` es para que una estacion sin `ym` no
+  // parta el grupo en dos: sin mes que comparar, todas caen en el mismo lado.
+  const ym = con.map(e=>e.minimercado.ym||'').sort().pop();
+  const dentro = con.filter(e=>(e.minimercado.ym||'')===ym);
+  const fuera = con.filter(e=>(e.minimercado.ym||'')!==ym);
+  const t = k => suma(dentro.map(e=>e.minimercado.r[k]||0));
+  const netas = t('ventas_netas'), resultado = t('resultado');
+  // `resultado_neto` es opcional --sale del personal cargado, que no todas las
+  // planillas traen--. Se suma sobre las que lo tienen y se dice cuantas son,
+  // como hace el KPI de facturacion estimada del grupo.
+  const conNeto = dentro.filter(e=>e.minimercado.r.resultado_neto!=null);
+  return {ym, dentro, fuera, total: con.length,
+    ventas: t('ventas'), netas, egresos: t('egresos'), resultado,
+    margen: netas ? resultado/netas*100 : null,
+    neto: conNeto.length ? suma(conNeto.map(e=>e.minimercado.r.resultado_neto)) : null,
+    nNeto: conNeto.length};
+}
+
+function miniCard(){
+  const g = miniGrupo();
+  if(!g) return '';
+  const mes = g.ym ? MESN[+g.ym.slice(5,7)-1] : mesAct;
+  const kpi = (l,v,sub)=>'<div class="kpi"><div class="lbl">'+l+'</div>'+
+    '<div class="val">'+v+'</div><div class="sub">'+sub+'</div></div>';
+  const mx = Math.max(...g.dentro.map(e=>e.minimercado.r.ventas||0), 1);
+  // Debajo del nombre, HASTA CUANDO llega esa planilla. Sin eso el resumen
+  // dice «$ 31,2 M» sin decir de que pedazo de mes: dos minis del mismo mes
+  // pueden estar cargados hasta dias muy distintos y la cifra mas alta puede
+  // ser simplemente la que tiene mas dias adentro. El mes solo se repite
+  // cuando NO es el del titulo (los que quedaron afuera del total).
+  const rot = (e, mes) => {
+    const f = fechaArchivoMM(e.minimercado.archivo);
+    const t = [mes, f?'al '+f:''].filter(Boolean).join(' · ');
+    return '<span class="n">'+e.nombre+(t?'<br><span style="font-weight:600; '+
+      'font-size:11px; color:var(--txt3)">'+t+'</span>':'')+'</span>';
+  };
+  const fila = e => '<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'">'+
+    rot(e,'')+
+    '<span class="pista"><span class="barra" style="width:'+
+      ((e.minimercado.r.ventas||0)/mx*100).toFixed(1)+'%"></span></span>'+
+    '<span class="v">$ '+kf(e.minimercado.r.ventas||0)+'</span></button>';
+  // El que quedo afuera va SIN barra: una barra al lado de las otras dice
+  // «compará esto con aquello», y son meses distintos. La columna del medio
+  // queda vacia a proposito, para que los renglones sigan alineados.
+  const filaFuera = e => '<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'">'+
+    rot(e, e.minimercado.ym?MESN[+e.minimercado.ym.slice(5,7)-1]:'sin mes')+
+    '<span></span>'+
+    '<span class="v">$ '+kf(e.minimercado.r.ventas||0)+'</span></button>';
+  return '<div class="divisor">Minimercados</div>'+
+    '<div class="card" id="gMini"><h2>Minimercados · '+mes+'</h2>'+
+    '<div class="baj">'+
+      (g.fuera.length ? g.dentro.length+' de '+g.total+' con la planilla de '+mes
+                      : (g.total===1?'El unico del grupo':'Los '+g.total+' del grupo')+' · '+mes)+
+      '. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
+    '<div class="kpis" style="margin-top:8px">'+
+    kpi('Venta del mes','$ '+kf(g.ventas), g.dentro.length+' minimercado'+(g.dentro.length===1?'':'s')+' · '+mes)+
+    kpi('Ventas netas','$ '+kf(g.netas),'sin vencida, consumo ni devoluciones')+
+    kpi('Salió de la caja','$ '+kf(g.egresos),'mercadería, insumos, gastos')+
+    kpi('Margen bruto','$ '+kf(g.resultado),
+        (g.margen!=null?pct0(g.margen)+' de las netas · ':'')+'antes de sueldos')+
+    (g.neto!=null
+      ? kpi('Resultado final','<span class="'+(g.neto>=0?'up':'down')+'">'+
+          (g.neto>=0?'':'−')+'$ '+kf(Math.abs(g.neto))+'</span>',
+          (g.nNeto<g.dentro.length?g.nNeto+' de '+g.dentro.length+' minimercados · ':'')+
+          'estructura aprox. descontada')
+      : '')+
+    '</div>'+
+    '<div class="sec2">Venta por minimercado</div>'+g.dentro.map(fila).join('')+
+    (g.fuera.length?'<div class="sec2">Todavía con la planilla de otro mes</div>'+
+      g.fuera.map(filaFuera).join('')+
+      '<p class="baj" style="margin-top:10px">No entran en los totales de arriba: '+
+      'sumar meses distintos daría un número que no es de ningún período.</p>':'')+
+    '</div>';
+}
+
 function vGeneral(){
   const mesProd = PRODS.map(p=>({l:p.l,c:p.c,v:suma(ESTS.map(e=>sumaCampo(e.dias,p.k)))}));
   const gncMes = suma(ESTS.map(e=>sumaCampo(e.dias,'gnc')));
@@ -1078,9 +1188,20 @@ function vGeneral(){
   <div class="card"><h2>Por día de la semana</h2><div class="baj">Promedio de litros del grupo · ${mesAct}</div>
     ${hbars(porDow,'L')}</div>
 
+  ${miniCard()}
+
   <section><h2 class="sec">Noticias del rubro</h2>
     <div class="notas">${NOTAS.slice(0,4).map(notaHTML).join('')}</div></section>`;
   $('#vista').innerHTML = html;
+  // Desde el resumen se entra al MINI de esa estacion, no a su vista del dia:
+  // se deja elegida la pestana Mini antes de que el hash navegue. Este
+  // listener cuelga de #gMini y corre en el burbujeo ANTES que el de
+  // `data-ruta` (que esta en document), asi que cuando vEstacion lee
+  // `ce_tab` ya dice mini.
+  const gm=$('#gMini');
+  if(gm)gm.addEventListener('click', evn=>{
+    if(evn.target.closest('[data-ruta]'))lsSet('ce_tab','mini');
+  });
   const gv=$('#gVentas'); const db=dayBars(FECHAS, grupoDia, {linea2:promPrevG});
   gv.querySelector('.cch').innerHTML = db.svg;
   tocable(gv, FECHAS, grupoDia, 'L');
@@ -1360,6 +1481,7 @@ function vEstacion(clave){
       // dias del mes la planilla del mini todavia es la del mes pasado, y
       // decir «mes en curso» ahi es mentira justo los dias en que uno mira.
       const suyo = !mm.ym || mm.ym === (dias.length ? dias[dias.length-1].fecha.slice(0,7) : mm.ym);
+      const fMM = fechaArchivoMM(mm.archivo);
       const mesMM = mm.ym ? MESN[+mm.ym.slice(5,7)-1] : mesAct;
       const kpi = (l,v,sub)=>'<div class="kpi"><div class="lbl">'+l+'</div>'+
         '<div class="val">'+v+'</div><div class="sub">'+sub+'</div></div>';
@@ -1376,7 +1498,8 @@ function vEstacion(clave){
       miniHtml =
         '<div class="card"><h2>Minimercado · '+esc(mesMM)+'</h2>'+
         '<div class="baj">'+(suyo?'Lo que va del mes':'La planilla del mes en curso todavía no llegó: '+
-          'esto es lo último que hay')+'. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
+          'esto es lo último que hay')+(fMM?' · planilla al '+fMM:'')+
+          '. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
         '<div class="kpis" style="margin-top:8px">'+
         kpi('Venta del mes','$ '+kf(r.ventas), mm.n+' días cargados · $ '+kf(prom)+'/día')+
         kpi('Ventas netas','$ '+kf(r.ventas_netas),'sin vencida, consumo ni devoluciones')+

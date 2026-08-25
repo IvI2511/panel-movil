@@ -232,13 +232,21 @@ function conPersonal() {
    meses cerrados con cinco cifras. Los numeros son del mismo orden de
    magnitud que los reales pero NO son los de nadie: este repo es publico
    (lo necesita GitHub Pages) y el historial de git no se borra. Big Blue queda con el mini del mes PASADO,
-   que es lo que pasa el 1 de cada mes. */
+   que es lo que pasa el 1 de cada mes.
+
+   `margen` es `resultado / ventas_netas` (minimercado.py:317) y aca se calcula,
+   no se escribe a ojo. Venia suelto --al limpiar las cifras reales se
+   recalcularon las sumas y el cociente no--, y un fixture donde el margen no
+   se deduce de sus propias cifras no puede atestiguar NADA sobre el margen:
+   el resumen del grupo lo rehace desde las sumas y con el numero viejo daba
+   27% al lado del 30% de la misma estacion, sin que ninguno de los dos
+   estuviera mal. */
 function conMinimercado() {
   const d = base();
   d.estaciones.find(x => x.clave === 'adrogue').minimercado = {
     ym: '2026-08', archivo: 'ADROGUE-18-08-2026-Minimercado-ENCARGADO.xlsx', n: 18,
     r: {ventas: 31207640, ventas_netas: 30861155, egresos: 22470318,
-        resultado: 8390837, margen: 0.2958, resultado_neto: -5218904,
+        resultado: 8390837, margen: 0.27189, resultado_neto: -5218904,
         empleados: 5, costo_personal: 11400000,
         efectivo: 16240880, mercado_pago: 10118455, tarjeta: 3402190,
         red: 18270, shellbox: 481630,
@@ -251,8 +259,27 @@ function conMinimercado() {
   d.estaciones.find(x => x.clave === 'bigblue').minimercado = {
     ym: '2026-07', archivo: 'BIG_BLUE-Minimercado.xlsx', n: 31,
     r: {ventas: 39884270, ventas_netas: 39740355, egresos: 24905180,
-        resultado: 14835175, margen: 0.3695},
+        resultado: 14835175, margen: 0.373303},
   };
+  return d;
+}
+
+/* Los dos minimercados en el MISMO mes: el caso normal a mitad de mes, y el
+   unico donde el resumen del grupo suma mas de uno de verdad. Con
+   conMinimercado() --Big Blue en julio-- el total sale de UNA sola estacion, y
+   ahi un resumen que se olvidara de sumar, o que mostrara el primero que
+   encuentra, pasaria igual de verde.
+
+   Big Blue estrena nombre CON fecha; en conMinimercado() no la trae, que
+   tambien pasa (el otro repo solo exige que el nombre diga «minimercado»).
+   Y sigue SIN `resultado_neto`: es opcional --sale del personal cargado-- y
+   asi el total de esa fila se arma sobre una sola de las dos. */
+function dosMinis() {
+  const d = conMinimercado();
+  const bb = d.estaciones.find(x => x.clave === 'bigblue').minimercado;
+  bb.ym = '2026-08';
+  bb.archivo = 'BIG_BLUE-15-08-2026-Minimercado.xlsx';
+  bb.n = 15;
   return d;
 }
 
@@ -338,6 +365,6 @@ function conCambioDePrecio() {
   return d;
 }
 
-module.exports = {conMinimercado, formaCambiada, paqueteViejo, base, conAtrasadaLider, todasAlDia, soloFaltaLaVacia, arranqueDeMes, unaSinPrecios, conPersonal, conZona, camionSinImporte, conCambioDePrecio,
+module.exports = {conMinimercado, dosMinis, formaCambiada, paqueteViejo, base, conAtrasadaLider, todasAlDia, soloFaltaLaVacia, arranqueDeMes, unaSinPrecios, conPersonal, conZona, camionSinImporte, conCambioDePrecio,
                   hostil, hostilTodasAlDia, diasAlReves, XSS_TEXTO, XSS_ATRIB,
                   mesEnBlanco, MES, PREV, HOY, dd};
