@@ -51,7 +51,7 @@
     border-bottom:1px solid var(--line);
     display:flex; align-items:center; gap:10px; padding:10px 12px;
   }
-  .topbar .menu{width:40px; height:40px; border-radius:10px; background:var(--surf1);
+  .topbar .menu{width:44px; height:44px; border-radius:10px; background:var(--surf1);
     display:flex; align-items:center; justify-content:center; flex:none}
   .topbar .menu svg{width:20px; height:20px; stroke:var(--txt); stroke-width:2; fill:none; stroke-linecap:round}
   .topbar .tit{font-weight:750; font-size:17px; letter-spacing:-.01em; min-width:0;
@@ -101,7 +101,11 @@
   .lectura{min-height:18px; font-size:12.5px; color:var(--txt2); margin-top:6px; font-variant-numeric:tabular-nums}
 
   .chips{display:flex; gap:6px; margin-bottom:10px; flex-wrap:wrap}
-  .chip{font-size:12.5px; font-weight:650; padding:5px 12px; border-radius:99px; background:var(--surf1); color:var(--txt2)}
+  /* 44px de alto: es el minimo para acertarle con el dedo, y estos chips
+     median 28 (PORT-54). Se usan parado en la playa, muchas veces con sol. */
+  .chip{font-size:12.5px; font-weight:650; padding:0 14px; min-height:44px;
+    display:inline-flex; align-items:center; border-radius:99px;
+    background:var(--surf1); color:var(--txt2)}
   .chip.act{background:var(--acc-soft); color:var(--acc)}
 
   /* Pestañas de la estación. La paridad con el escritorio le sumó 7 tarjetas
@@ -124,8 +128,18 @@
   .ref span{display:flex; align-items:center; gap:5px}
   .ref i{width:14px; border-top:2px dashed currentColor; display:inline-block}
 
-  .hb{display:grid; grid-template-columns:96px 1fr 76px; align-items:center; gap:8px; font-size:13px; padding:3px 0}
-  .hb .n{color:var(--txt2); font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  /* La columna del rotulo era de 96px FIJOS y con puntos suspensivos: «Premium
+     (V-Power + V/P D)» necesita 137 y se leia «Premium (V-P…», o sea que se
+     comia justo la aclaracion de que suma cada categoria, que es la razon por
+     la que el parentesis esta. No era cosa de telefono chico: al ser fija se
+     cortaba igual a 320, 390 y 430 px.
+     Ahora crece hasta 46% del ancho y, si aun asi no entra, DOBLA el renglon
+     en vez de cortar. Y el minimo de 44px de alto es el area tactil: estas
+     filas son botones de verdad --llevan al panel de la estacion-- y con 25px
+     se falla el toque seguido (PORT-54). */
+  .hb{display:grid; grid-template-columns:minmax(96px,46%) 1fr 76px; align-items:center;
+    gap:8px; font-size:13px; padding:3px 0; min-height:44px}
+  .hb .n{color:var(--txt2); font-weight:600; overflow-wrap:anywhere; line-height:1.25}
   .hb .pista{height:15px; display:flex; align-items:center}
   .hb .barra{height:13px; border-radius:0 4px 4px 0; min-width:3px; background:var(--acc)}
   .hb .v{text-align:right; font-variant-numeric:tabular-nums; font-weight:650}
@@ -134,7 +148,14 @@
   .est-cab .sem{width:10px; height:10px; border-radius:50%; background:var(--ok)}
   .est-cab h1{font-size:21px; font-weight:750; letter-spacing:-.01em}
   .tag{font-size:11.5px; color:var(--txt2); background:var(--surf1); border-radius:99px; padding:4px 10px; font-weight:600}
-  .volver{color:var(--acc); font-weight:650; font-size:13.5px; padding:2px 0}
+  /* El boton que mas se toca del panel, y medía 23,6 px de alto. No estaba en
+     la lista de PORT-54 pero es el mismo problema. El inline-flex con
+     margin-right:auto ademas lo pega a la izquierda: como <button> a secas
+     heredaba el centrado y quedaba en el medio de la pantalla, que era otra
+     cosa anotada aparte. */
+  .volver{color:var(--acc); font-weight:650; font-size:13.5px;
+    min-height:44px; display:inline-flex; align-items:center;
+    padding:0 10px 0 0; margin-right:auto; justify-self:start}
 
   .filaP{display:flex; align-items:center; gap:8px; font-size:13.5px; padding:6px 0; border-bottom:1px solid var(--line)}
   .filaP:last-child{border-bottom:0}
@@ -679,6 +700,32 @@ const ESTS = (DATA.estaciones||[]).map(e0 => {
     tieneGnc: e.dias.some(d=>d.gnc)};
 });
 const FECHAS = [...new Set(ESTS.flatMap(e=>e.dias.map(d=>d.fecha)))].sort();
+/* El paquete lo arma OTRO repo que se publica por su cuenta. Si le cambia el
+   nombre a un campo, las guardas del contenedor (`e0.dias||[]`) lo dejan
+   pasar y `liq` queda en 0 en todos lados: el panel dibujaba «0 L», «↑ 0,0%»
+   y —lo peor— «Sin faltantes · todas al día», que es una afirmacion sobre la
+   que el que recibe las planillas puede actuar. Antes de blindar el
+   contenedor este caso REVENTABA, que era mas honesto.
+
+   La distincion que importa: si hay dias y NINGUNO trae la clave `liq`, la
+   forma cambio. Si no hay dias en absoluto, es un mes que todavia no tiene
+   planillas — el dia 1 de cada mes— y eso es legitimo y ya se avisa aparte. */
+const _conDias = ESTS.flatMap(e=>e.dias);
+const ilegible = _conDias.length > 0 && !_conDias.some(d=>typeof d.liq === 'number');
+if(ilegible){
+  $('#btnMenu').style.display='none';
+  const _tk=$('.ticker'); if(_tk)_tk.style.display='none';
+  pantalla('<div class="card"><h2>El paquete no se pudo leer</h2><div class="baj">'+
+    'Llegaron '+_conDias.length+' días de '+ESTS.length+' estaciones, pero ninguno trae '+
+    'los litros donde el panel los busca. Lo más probable es que el programa que '+
+    'arma el paquete haya cambiado y esta página se haya quedado atrás.</div>'+
+    '<p class="baj">No se muestran números: serían todos cero, y un cero acá no '+
+    'querría decir que no se vendió nada.</p>'+
+    '<button class="btn" id="btnRecargar">Reintentar</button></div>');
+  const _b=document.getElementById('btnRecargar');
+  if(_b)_b.addEventListener('click', ()=>recargar());
+  return false;
+}
 // Si NINGUNA estacion cargo un solo dia no hay fechaMax, y todo lo de abajo
 // (titulos, proyeccion, graficos) sale de ahi. Se avisa y se corta.
 if(!FECHAS.length){
