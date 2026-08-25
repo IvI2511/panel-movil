@@ -25,7 +25,12 @@ function dia(n, {liq, gnc = 0, fact = 0, enc = 'Encargado', obs = ''} = {}) {
   // cambian. Aca se ponen solo los dias 3 y 15, para ejercitar el arrastre
   // hacia adelante Y hacia atras que hace preciosFF en el escritorio.
   if (n === 3 || n === 15) {
-    const sube = n === 15 ? 1.10 : 1;
+    // Un 1,3%: es lo que se mueve un precio de verdad en un mes. Estuvo en 1.10
+    // --un 10%-- y con ese salto el eje del precio quedaba tan ancho que el
+    // abreviado en miles alcanzaba a distinguir las etiquetas, asi que el
+    // defecto de las «cuatro veces 2,3 k» no se reproducia en las pruebas
+    // aunque estuviera en la app.
+    const sube = n === 15 ? 1.013 : 1;
     d.pr_vpn = Math.round(2500 * sube);
     d.pr_sup = Math.round(2100 * sube);
     d.pr_vpd = Math.round(2400 * sube);
@@ -66,7 +71,13 @@ function mes(hasta, {base, gncDe = () => 0, enc = 'Encargado'} = {}) {
   return dias;
 }
 
-const HOY = 21;   // el dia mas nuevo del grupo: fechaMax = 2026-08-21
+/* El dia mas nuevo del grupo: fechaMax = 2026-08-21.
+   Las fechas van FIJAS a proposito. Se probo hacerlas relativas a hoy --para
+   que el panel no las viera atrasadas-- y eso metia la fecha de corrida en
+   TODOS los promedios: siete checks de porcentajes se rompian solos cada
+   mañana. El «hoy» lo controla el arnes (crearEntorno({hoy})), que es donde
+   tiene que estar. */
+const HOY = 21;
 
 const base = () => ({
   generado: '2026-08-22T07:14:03',
@@ -76,9 +87,9 @@ const base = () => ({
     {clave: 'adrogue', nombre: 'Adrogue', dias: mes(HOY, {base: 9000, gncDe: () => 1400, enc: 'Aníbal'}),
      prev: prevDias(8600, 1300),
      // Los camiones traen el importe pagado: es lo que permite el margen bruto.
-     camiones: [{d: 5, m: 8, litros: 30000, boleta: 'B-1001', importe: 66000000,
+     camiones: [{d: 5, m: 8, litros: 30000, boleta: 'B-1001', importe: 61200000,
                  'SUPER': 20000, 'V-POWER': 10000},
-                {d: 18, m: 8, litros: 20000, boleta: 'B-1042', importe: 45000000,
+                {d: 18, m: 8, litros: 20000, boleta: 'B-1042', importe: 41000000,
                  'V/P DIESEL': 12000, 'Evolux D': 8000}]},
     // Al dia y CON GNC el mes entero, pero el ULTIMO dia el compresor no
     // vendio: es el caso de PORT-44 #2.

@@ -203,6 +203,43 @@ seccion('escalaBarras — cuando el cero es la referencia y cuando no');
     '(la media del mes pasado, que puede estar arriba de todo)');
 }
 
+// ---------------------------------------------------------------------------
+seccion('atrasoDeDatos — «al día» respecto de HOY, no de sí mismo');
+{
+  // La planilla de un dia se carga al SIGUIENTE: tener el cierre de ayer es
+  // estar al dia.
+  check(C.atrasoDeDatos('2026-08-24', '2026-08-25') === 0,
+    'el cierre de ayer es estar al dia (atraso 0)');
+  check(C.atrasoDeDatos('2026-08-25', '2026-08-25') === 0,
+    'y el de hoy tambien, si ya llego');
+  // El caso que se vio: lunes 25, ultimo cierre domingo 23.
+  check(C.atrasoDeDatos('2026-08-23', '2026-08-25') === 1,
+    'con el cierre del 23 y hoy 25, hay 1 dia de atraso — que es «faltan todas»');
+  check(C.atrasoDeDatos('2026-08-18', '2026-08-25') === 6,
+    'y una semana sin cargar da 6');
+  check(C.atrasoDeDatos('2026-08-31', '2026-09-01') === 0,
+    'cruzar de mes no lo confunde');
+  check(C.atrasoDeDatos('2026-02-28', '2026-03-01') === 0,
+    'ni el final de febrero');
+  check(C.atrasoDeDatos('', '2026-08-25') === 0 && C.atrasoDeDatos('2026-08-25', '') === 0,
+    'sin fecha no inventa un atraso');
+  check(C.atrasoDeDatos('2026-08-26', '2026-08-25') === 0,
+    'y un dato del futuro no da atraso negativo');
+}
+
+// ---------------------------------------------------------------------------
+seccion('abreviaEje — cuatro etiquetas iguales no son un eje');
+{
+  // El caso que se vio: eje truncado entre 2.281 y 2.321, y `kf` devolvia
+  // «2,3 k» para las cuatro lineas.
+  check(C.abreviaEje(2281, 2321) === false,
+    'con un rango de 40 el numero va entero: abreviado darian cuatro «2,3 k»');
+  check(C.abreviaEje(0, 45000) === true,
+    'con un rango de 45.000 se abrevia, que si no el eje se llena de digitos');
+  check(C.abreviaEje(0, 999) === false, 'el corte esta en mil');
+  check(C.abreviaEje(0, 1000) === true, 'justo en mil, abrevia');
+}
+
 console.log('');
 if (fallas) { console.log(fallas + ' de ' + total + ' comprobaciones FALLARON'); process.exit(1); }
 console.log('las ' + total + ' comprobaciones pasaron');

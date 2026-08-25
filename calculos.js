@@ -221,10 +221,42 @@
     return out.slice(0, 4);
   }
 
+  /* Cuantos dias de atraso tienen los datos respecto de HOY.
+   *
+   * Por que hace falta. El panel decia «Sin faltantes · las 6 planillas al dia»
+   * comparando cada estacion contra la MAS NUEVA DEL PAQUETE. Si las seis
+   * estaban igual de atrasadas, las seis eran «frescas» y el panel afirmaba que
+   * no faltaba ninguna sobre datos de hace dos dias. Lo vio Ivan un lunes, con
+   * el ultimo cierre del sabado. Comparar las estaciones entre si distingue
+   * «falta una» de «no falta ninguna»; no distingue «no falta ninguna» de
+   * «faltan todas».
+   *
+   * La planilla de un dia se carga al dia SIGUIENTE, asi que tener el cierre de
+   * ayer es estar al dia: eso es atraso 0. Devuelve 0 o mas.
+   */
+  function atrasoDeDatos(fechaMax, hoy) {
+    if (!fechaMax || !hoy) return 0;
+    const d = t => new Date(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10));
+    const dias = Math.round((d(hoy) - d(fechaMax)) / 86400000);
+    return Math.max(0, dias - 1);
+  }
+
+  /* Como rotular el eje de un grafico.
+   *
+   * `kf` abrevia a un decimal en miles, y con un eje truncado entre 2.281 y
+   * 2.321 las cuatro lineas salian «2,3 k», «2,3 k», «2,3 k», «2,3 k»: cuatro
+   * etiquetas iguales, justo en el grafico donde se trunco el eje PARA poder
+   * distinguirlas. Si el rango no llega a mil, el numero va entero.
+   */
+  function abreviaEje(lo, hi) {
+    return (hi - lo) >= 1000;
+  }
+
   const API = {rellenarPrecios: rellenarPrecios, mix: mix,
                factEstimada: factEstimada, puenteGnc: puenteGnc,
                margen: margen, proyeccion: proyeccion,
-               escalaBarras: escalaBarras};
+               escalaBarras: escalaBarras, atrasoDeDatos: atrasoDeDatos,
+               abreviaEje: abreviaEje};
 
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else raiz.Calculos = API;

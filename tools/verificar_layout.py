@@ -61,6 +61,18 @@ MEDIR = """() => {
       if (b.top >= a.bottom - 1) huecos.push(Math.round(b.top - a.bottom));
     }
   });
+  // Las etiquetas del eje de cada grafico: cuatro iguales no son un eje. Pasó
+  // con el precio por litro — el eje truncado entre 2.281 y 2.321 y `kf`
+  // abreviando a un decimal en miles daba «2,3 k» cuatro veces, justo en el
+  // grafico donde se trunco el eje PARA poder distinguirlas.
+  const ejes = [];
+  document.querySelectorAll('.card svg').forEach(svg => {
+    const et = [...svg.querySelectorAll('text[text-anchor="end"]')].map(x => x.textContent);
+    if (et.length >= 2 && new Set(et).size < et.length) {
+      const h = svg.closest('.card').querySelector('h2');
+      ejes.push((h ? h.textContent.slice(0, 24) : '?') + ': ' + et.join('/'));
+    }
+  });
   const t = document.querySelector('#eTabs');
   const cortados = [];
   document.querySelectorAll('.hb .n, .card h2').forEach(el => {
@@ -68,6 +80,7 @@ MEDIR = """() => {
   });
   return {
     chicos, huecos, cortados,
+    ejes,
     pestanas: t ? Math.round(t.getBoundingClientRect().height) : null,
     desborde: document.documentElement.scrollWidth - window.innerWidth,
   };
@@ -159,6 +172,9 @@ def main() -> int:
                             check(m["pestanas"] <= MAXIMO_PESTANAS,
                                   f"{d}: la barra de pestanas es una fila "
                                   f"({m['pestanas']}px, tope {MAXIMO_PESTANAS})")
+                        check(not m["ejes"],
+                              f"{d}: ningun eje con etiquetas repetidas"
+                              + (" — " + "; ".join(m["ejes"][:2]) if m["ejes"] else ""))
                         check(not m["cortados"],
                               f"{d}: ningun titulo ni etiqueta cortado"
                               + (" — " + ", ".join(m["cortados"][:2]) if m["cortados"] else ""))

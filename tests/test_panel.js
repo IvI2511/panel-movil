@@ -57,6 +57,7 @@ const CALCULOS = require('fs').readFileSync('calculos.js', 'utf8');
 
 function correr(datos, opciones) {
   const env = crearEntorno({hash: (opciones || {}).hash || '',
+                            hoy: (opciones || {}).hoy,
                             idsEstaticos: IDS_ESTATICOS});
   vm.createContext(env.ventana);
   vm.runInContext(CALCULOS + SCRIPT, env.ventana, {filename: 'index.html'});
@@ -1060,7 +1061,11 @@ seccion('Paridad: los precios que ya viajaban y nadie dibujaba');
 
   // --- El importe de los camiones tambien viajaba sin dibujarse ---
   check(/B-1001/.test(t), 'guarda: la tabla de camiones se dibujo');
-  check(/66,0 M|66 M|66\.000\.000/.test(t),
+  // El numero se lee del fixture, no va escrito a mano: estaba fijo en «66 M» y
+  // al ajustar el costo del camion quedo apuntando a un valor que ya no existe.
+  const impCam = d.camiones[0].importe;
+  const impTxt = (impCam / 1e6).toLocaleString('es-AR', {maximumFractionDigits: 1}) + ' M';
+  check(t.indexOf('$ ' + impTxt) >= 0,
     'cada camion muestra el importe que se pago (dice: ' +
     ((t.match(/B-1001[^·]{0,60}/) || ['nada'])[0]) + ')');
 }
@@ -1393,6 +1398,52 @@ seccion('Paridad: medios de pago del dia y precio promedio del litro');
   const sp = irA(correr(fx.unaSinPrecios()), '#est/gasoil');
   check(sp.indexOf('Precio promedio del litro') < 0,
     'y una estacion sin precios no muestra un promedio inventado');
+}
+
+// ===================================================================
+seccion('«Al dia» respecto de HOY, no de si mismo');
+// ===================================================================
+// El panel decia «Sin faltantes · las 6 planillas al dia» comparando cada
+// estacion contra la MAS NUEVA DEL PAQUETE. Si las seis estaban igual de
+// atrasadas, las seis eran «frescas» y afirmaba que no faltaba ninguna sobre
+// datos de hace dos dias. Lo vio Ivan un lunes, con el ultimo cierre del
+// sabado, y es la afirmacion de fondo del panel: si llegaron las planillas.
+{
+  const d = fx.todasAlDia();
+  const fmax = [...new Set(d.estaciones.flatMap(e => e.dias.map(x => x.fecha)))].sort().pop();
+  check(fmax === '2026-08-21', 'guarda: el ultimo cierre del fixture es el 21 (dio ' + fmax + ')');
+
+  // Al dia: el cierre de ayer. La planilla de un dia se carga al siguiente.
+  const alDia = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#'));
+  check(/Sin faltantes/.test(alDia) && /todas al día/.test(alDia),
+    'con el cierre de AYER dice «Sin faltantes · todas al día»');
+
+  // Dos dias despues: las seis siguen parejas, pero falta un dia de planillas.
+  const tarde = sinTags(irA(correr(d, {hoy: '2026-08-23'}), '#'));
+  check(!/Sin faltantes/.test(tarde),
+    'con un dia de atraso YA NO dice «Sin faltantes», aunque las seis esten parejas');
+  check(!/todas al día/.test(tarde), 'ni «todas al día»');
+  check(/último cierre/i.test(tarde),
+    'sino cual es el ultimo cierre');
+  check(tarde.indexOf('vie 21/08') >= 0, 'con su fecha (vie 21/08)');
+  check(/falta 1 día/.test(tarde),
+    'y cuantos dias de planillas faltan (1)');
+
+  // Cuatro dias: el numero acompaña.
+  const muyTarde = sinTags(irA(correr(d, {hoy: '2026-08-26'}), '#'));
+  check(/faltan 4 días/.test(muyTarde),
+    'con cuatro dias de atraso dice «faltan 4 días» (dice: ' +
+    ((muyTarde.match(/falta[n]? \d+ días?/) || ['nada'])[0]) + ')');
+
+  // Y el KPI de planillas deja de afirmar que estan todas al dia.
+  const kpi = subDeKpi(irA(correr(d, {hoy: '2026-08-23'}), '#'), 'Planillas');
+  check(kpi.indexOf('todas al día') < 0,
+    'el KPI de Planillas tampoco dice «todas al día» (dice: ' + kpi.trim() + ')');
+
+  // Lo que NO cambia: si de verdad falta una estacion, eso manda.
+  const falta = sinTags(irA(correr(fx.base(), {hoy: '2026-08-22'}), '#'));
+  check(/Falta/.test(falta) && !/Sin faltantes/.test(falta),
+    'y cuando falta una estacion de verdad, sigue diciendo cual');
 }
 
 // ===================================================================

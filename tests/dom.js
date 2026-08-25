@@ -41,8 +41,14 @@ function elemento(nombre) {
   return el;
 }
 
+/* `hoy` ('YYYY-MM-DD') fija que dia cree la pagina que es. Hace falta desde
+   que el panel compara el ultimo cierre contra HOY para saber si faltan
+   planillas: con la fecha real de la maquina, un fixture con fechas fijas se
+   ve «atrasado» al dia siguiente de escribirlo. Por defecto es el dia
+   posterior al ultimo del fixture, o sea «al dia». */
 function crearEntorno({localStorage = new Map(), fetch, hash = '',
                        romperStorage = false, enLinea = true,
+                       hoy = '2026-08-22',
                        idsEstaticos = []} = {}) {
   const reg = new Map();
   const listeners = {};   // tipo -> [fn]
@@ -83,6 +89,15 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
   const location = {hash, recargas: 0, reload() { this.recargas++; },
                     href: 'http://localhost/'};
 
+  // Date con el dia congelado: `new Date()` sin argumentos devuelve `hoy` a
+  // mediodia (mediodia y no medianoche para que ningun corrimiento de zona
+  // horaria cambie el DIA). Todo lo demas de Date sigue igual.
+  const [_A, _M, _D] = hoy.split('-').map(Number);
+  class FakeDate extends Date {
+    constructor(...a) { if (a.length === 0) super(_A, _M - 1, _D, 12, 0, 0); else super(...a); }
+    static now() { return new Date(_A, _M - 1, _D, 12, 0, 0).getTime(); }
+  }
+
   const ventana = {
     document, location,
     history: {replaceState(_a, _b, h) { if (h) location.hash = h; }},
@@ -99,7 +114,11 @@ function crearEntorno({localStorage = new Map(), fetch, hash = '',
                          localStorage.delete(k); },
     },
     fetch: fetch || (() => Promise.reject(new Error('sin red en los tests'))),
-    console, Intl, Date, Math, JSON, Number, String, Array, Object, Set, Map,
+    // OJO: `Date` va aca y no arriba. Estaba puesto como `Date: FakeDate` al
+    // principio del literal y ESTA linea lo pisaba --clave repetida, gana la
+    // ultima--, asi que el dia congelado no se aplicaba y el arnes seguia
+    // viendo la fecha real de la maquina.
+    console, Intl, Date: FakeDate, Math, JSON, Number, String, Array, Object, Set, Map,
     setTimeout, clearTimeout, setInterval, clearInterval,
     // lo que el panel lee de si mismo
     // `onLine` decide si los botones de recargar pueden recargar.

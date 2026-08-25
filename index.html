@@ -730,6 +730,16 @@ ESTS.forEach(e=>{
   e.enDia = d.liq||0; e.gncDia = d.gnc||0; e.factDia = d.fact||0;
 });
 const frescas = ESTS.filter(e=>e.fresca);
+/* «Al día» respecto de QUÉ. `fresca` compara cada estación contra la más
+   nueva DEL PAQUETE: distingue «falta una» de «no falta ninguna», pero no
+   «no falta ninguna» de «faltan todas». Con las seis igual de atrasadas el
+   panel decía «Sin faltantes · las 6 planillas al día» sobre datos de hace
+   dos días. Comparar contra hoy es lo único que las separa. */
+const hoyISO = (()=>{ const d=new Date();
+  const p=x=>String(x).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); })();
+const ATRASO = Calculos.atrasoDeDatos(fechaMax, hoyISO);
+const alDia = ATRASO === 0;
 // Los KPIs del dia suman SOLO el ultimo dia real (fechaMax): una estacion que
 // no mando su planilla aporta 0 y la banda la nombra, en vez de mezclar dias.
 // El promedio va SOLO sobre las que aportaron ESTE dia. El numerador suma el
@@ -771,6 +781,15 @@ const hora = (DATA.generado||'').slice(11,16);
 $('#cuando').innerHTML = 'Datos del <b>'+diaLbl(fechaMax)+'</b><br>publ. '+esc(hora)+' · '+esc(DATA.publicado_por);
 
 function bandaHTML(){
+  // Que las seis estén iguales NO es que estén al día: si nadie cargó, las
+  // seis están igual de atrasadas y antes eso salía en verde.
+  if(frescas.length===ESTS.length && !alDia)
+    return '<div class="banda" style="background:var(--warn-bg); color:var(--warn)">'+
+      '<span class="punto" style="background:var(--warn)"></span><span>'+
+      'El último cierre es del '+diaLbl(fechaMax)+
+      '<small>Las '+ESTS.length+' estaciones están parejas, pero hoy es '+diaLbl(hoyISO)+
+      ': falta'+(ATRASO>1?'n':'')+' '+ATRASO+' día'+(ATRASO>1?'s':'')+' de planillas</small>'+
+      '</span></div>';
   if(frescas.length===ESTS.length)
     return '<div class="banda"><span class="punto"></span><span>Sin faltantes'+
       '<small>Las '+ESTS.length+' planillas al día ('+diaLbl(fechaMax)+') · publicado '+esc(hora)+'</small></span></div>';
@@ -805,8 +824,12 @@ function dayBars(dias, vals, opts={}){
   const bw=(W-pl-6)/vals.length;
   const y=v=>H-pb-((v-esc.lo)/(esc.hi-esc.lo))*(H-pb-12);
   let g='';
+  // `kf` abrevia a un decimal en miles: con el eje truncado entre 2.281 y
+  // 2.321 las cuatro líneas salían «2,3 k», justo en el gráfico donde se
+  // truncó el eje PARA poder distinguirlas.
+  const rot = Calculos.abreviaEje(esc.lo, esc.hi) ? kf : v=>fmt.format(Math.round(v));
   esc.lineas.forEach(v=>{g+='<line x1="'+pl+'" x2="'+W+'" y1="'+y(v)+'" y2="'+y(v)+'" stroke="var(--line)" stroke-width="1"/>'+
-    '<text x="'+(pl-5)+'" y="'+(y(v)+3)+'" text-anchor="end" font-size="10" fill="var(--txt3)">'+kf(v)+'</text>';});
+    '<text x="'+(pl-5)+'" y="'+(y(v)+3)+'" text-anchor="end" font-size="10" fill="var(--txt3)">'+rot(v)+'</text>';});
   let b='';
   vals.forEach((v,i)=>{const x=pl+i*bw+1, h=Math.max(H-pb-y(v),1);
     b+='<rect data-i="'+i+'" x="'+x+'" y="'+y(v)+'" width="'+Math.max(bw-2,2)+'" height="'+h+'" rx="3" fill="'+(opts.color||'var(--acc)')+'"/>';});
@@ -993,7 +1016,9 @@ function vGeneral(){
       <div class="val">$ ${kf(feGrupo.dia)}</div>
       <div class="sub">del mes: $ ${kf(feGrupo.mes)}${feGrupo.n<frescas.length?' · '+feGrupo.n+' de '+frescas.length+' estaciones':''}</div></div>`:''}
     <div class="kpi"><div class="lbl">Planillas</div><div class="val">${frescas.length}/${ESTS.length}</div>
-      <div class="sub">${frescas.length===ESTS.length?'todas al día':'faltan '+(ESTS.length-frescas.length)}</div></div>
+      <div class="sub">${frescas.length<ESTS.length?'faltan '+(ESTS.length-frescas.length)
+        :alDia?'todas al día'
+        :`<span style="color:var(--warn)">último cierre: ${diaLbl(fechaMax)}</span>`}</div></div>
   </div>
   ${bandaHTML()}
 
@@ -1561,7 +1586,9 @@ $('#navEst').innerHTML = ESTS.map(e=>
 const tk=[ '<b>'+fmt.format(TOT.liq)+' L</b> el '+diaLbl(fechaMax)+' en el grupo ('+(TOT.delta>=0?'+':'−')+Math.abs(TOT.delta).toFixed(1).replace('.',',')+'%)',
   'GNC <b>'+fmt.format(TOT.gnc)+' m³</b>',
   frescas.length===ESTS.length
-    ? 'Sin faltantes · '+ESTS.length+'/'+ESTS.length+' planillas'
+    ? (alDia ? 'Sin faltantes · '+ESTS.length+'/'+ESTS.length+' planillas'
+             : 'Último cierre: '+diaLbl(fechaMax)+' · falta'+(ATRASO>1?'n':'')+' '+ATRASO+
+               ' día'+(ATRASO>1?'s':''))
     : 'FALTAN: '+ESTS.filter(e=>!e.fresca).map(e=>e.nombre).join(', '), ]
   // El top 3 sale del ULTIMO dia de cada estacion, que no siempre es el dia
   // del resto del panel: una atrasada entraba mezclada con las de hoy y sin
