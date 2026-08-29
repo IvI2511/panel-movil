@@ -800,8 +800,16 @@ const grupoPrev = (()=>{ // julio, dia a dia (hasta 31)
   // suma su julio entero y la proyeccion se da vuelta. Medido sobre los
   // fixtures: pasaba de ↑7,3% a ↓5,9%, y la linea de «media de julio» saltaba
   // de estar abajo de todas las barras a estar arriba de casi todas.
-  const dias = {}; ESTS.filter(e=>!e.sinDatos).forEach(e=>e.prev.forEach(d=>{dias[d.fecha]=(dias[d.fecha]||0)+d.liq;}));
-  return Object.keys(dias).sort().map(f=>({fecha:f, liq:dias[f]}));
+  // Suma liq Y gnc. Antes acumulaba un numero suelto --solo litros-- y salia
+  // {fecha, liq}: el gnc del mes anterior se caia ACA, en el armado, aunque
+  // viajara completo en el JSON. Por eso la proyeccion de GNC del grupo decia
+  // «Cerró julio: s/d» mientras cada estacion, que lee su `e.prev` derecho,
+  // mostraba la comparativa bien. Y el grupo es la pantalla que se abre
+  // primero, asi que era lo que se veia siempre.
+  const dias = {}; ESTS.filter(e=>!e.sinDatos).forEach(e=>e.prev.forEach(d=>{
+    const x = dias[d.fecha] || (dias[d.fecha] = {liq:0, gnc:0});
+    x.liq += d.liq; x.gnc += d.gnc||0;}));
+  return Object.keys(dias).sort().map(f=>({fecha:f, liq:dias[f].liq, gnc:dias[f].gnc}));
 })();
 const hora = (DATA.generado||'').slice(11,16);
 $('#cuando').innerHTML = 'Datos del <b>'+diaLbl(fechaMax)+'</b><br>publ. '+esc(hora)+' · '+esc(DATA.publicado_por);

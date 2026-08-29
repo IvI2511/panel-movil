@@ -1497,6 +1497,25 @@ seccion('Dos defectos vistos en produccion el 25-ago');
   const cgv = (irA(correr(viejo), '#est/adrogue').split('Proyección de cierre · GNC')[1] || '');
   check(cgv.length === 0 || sinTags(cgv.slice(0, 900)).indexOf('s/d') >= 0,
     'pero con un paquete que no lo manda, sigue diciendo s/d en vez de inventar un cero');
+
+  // ---- 3. Y lo mismo en la vista del GRUPO, que es la que se ve al abrir ----
+  // Arriba se arreglo `prev` (el dato viaja) y la ficha de UNA estacion, que
+  // lee `e.prev` derecho. Pero el grupo no: su mes anterior sale de
+  // `grupoPrev`, que suma las estaciones dia por dia y devolvia {fecha, liq}
+  // -- el gnc se caia ahi, en el armado. Resultado: cada estacion mostraba su
+  // comparativa de GNC y el grupo decia «s/d», que es justo la pantalla que se
+  // abre primero. Visto en produccion el 28-ago-2026, con el dato completo en
+  // el JSON publicado y la pagina al dia.
+  const gen = irA(correr(d), '#');
+  const cgg = (gen.split('Proyección de cierre · GNC')[1] || '').slice(0, 900);
+  check(cgg.length > 0, 'guarda: la tarjeta de GNC del grupo existe');
+  check(sinTags(cgg).indexOf('s/d') < 0,
+    'la proyeccion de GNC DEL GRUPO tampoco dice «s/d» del mes pasado');
+  const cerroG = Math.round(d.estaciones
+    .filter(x => (x.dias || []).length)
+    .reduce((a2, x) => a2 + (x.prev || []).reduce((b, p) => b + (p.gnc || 0), 0), 0));
+  check(sinTags(cgg).indexOf(ab(cerroG)) >= 0,
+    'sino cuanto cerro el grupo de verdad (' + ab(cerroG) + ' m³)');
 }
 
 // ===================================================================
