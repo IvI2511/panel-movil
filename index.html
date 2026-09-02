@@ -1385,7 +1385,10 @@ function vEstacion(clave){
         '</div></div>';
     else if(g)
       gncHtml = '<div class="card"><h2>GNC · puente vs. surtidores</h2>'+
-        '<div class="baj">Falta la lectura del puente en la planilla de este día.</div></div>';
+        // `nd` tambien sale cuando la lectura ESTA pero repite la anterior (o
+        // va para atras): decir solo «falta» mandaba a buscar una celda vacia
+        // que no lo estaba. El escritorio ya lo dice asi.
+        '<div class="baj">Falta la lectura del puente en la planilla de este día, o repite la del día anterior.</div></div>';
   }
 
   // Margen bruto: lo que se paga al camion contra el precio de venta.
