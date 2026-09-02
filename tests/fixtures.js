@@ -255,11 +255,26 @@ function conMinimercado() {
         ven: 88400, consumo: 91250, devoluciones: 133700},
     previos: {'2026-07': {ventas: 58904310, ventas_netas: 57612480,
                           egresos: 40318970, resultado: 17293510}},
+    // El mes anterior, para el «vs mes pasado». Sale de los meses cerrados de
+    // la planilla, asi que son las MISMAS cifras que `previos['2026-07']`
+    // (movil.py manda las dos cosas: la tabla y con quien comparar).
+    // Adrogue va por el dia 18: el mes NO cerro, y esa es la diferencia que
+    // decide si se comparan totales o promedios por dia.
+    prev: {ventas: 58904310, ventas_netas: 57612480,
+           egresos: 40318970, resultado: 17293510},
+    prev_ym: '2026-07', prev_origen: 'planilla', cerrado: false,
   };
+  // Big Blue es el otro lado de las dos bifurcaciones: su mes CERRO (julio
+  // tiene 31 dias y trae los 31), asi que compara TOTALES y no promedios; y su
+  // mes anterior no esta en la planilla --no trae `previos`-- sino en lo
+  // GUARDADO, que es el otro camino de db.mini_prev.
   d.estaciones.find(x => x.clave === 'bigblue').minimercado = {
     ym: '2026-07', archivo: 'BIG_BLUE-Minimercado.xlsx', n: 31,
     r: {ventas: 39884270, ventas_netas: 39740355, egresos: 24905180,
         resultado: 14835175, margen: 0.373303},
+    prev: {ventas: 36120480, ventas_netas: 35980210,
+           egresos: 23110500, resultado: 12869710},
+    prev_ym: '2026-06', prev_origen: 'base', cerrado: true,
   };
   return d;
 }
@@ -280,6 +295,11 @@ function dosMinis() {
   bb.ym = '2026-08';
   bb.archivo = 'BIG_BLUE-15-08-2026-Minimercado.xlsx';
   bb.n = 15;
+  // Si se mueve el mes hay que mover con que se compara, o el fixture describe
+  // algo imposible (agosto con «mes anterior = junio») y el test que se apoye
+  // en el estaria atestiguando sobre un caso que no existe.
+  bb.prev_ym = '2026-07';
+  bb.cerrado = false;
   return d;
 }
 

@@ -933,6 +933,40 @@ const deltaTxt = d => '<span class="'+(d>=0?'up':'down')+'">'+(d>=0?'↑':'↓')
    parado, y el panel no distingue. Asi que informa lo que sabe. */
 const gncSub = d => d==null ? 'sin GNC este mes' : deltaTxt(d);
 
+/* El «vs mes pasado» del minimercado (PORT-42). Dos cosas que un porcentaje
+   pelado hace mal, y que son la razon de que esto sea una funcion y no una
+   division suelta en el renglon de un KPI:
+
+   - EL MES EN CURSO. La mitad de las veces que uno mira, el mes esta abierto:
+     comparar los 18 dias que van contra el mes anterior ENTERO no es una
+     comparacion, es una resta mal hecha — y miente para el lado tranquilizador,
+     porque un mes que viene MEJOR que el anterior da un numero espantoso hasta
+     el dia 31. Con `dias` y `diasPrev` se compara el promedio POR DIA; sin
+     ellos (el mes ya cerro) se comparan los totales, que es lo que uno quiere.
+   - LA BASE NEGATIVA. El resultado final de un mini puede dar en rojo, y sobre
+     una base negativa el porcentaje miente al reves: pasar de perder 100.000 a
+     perder 50.000 da «-50%», que se lee como que empeoro. Ahi se muestra la
+     diferencia en plata, que se entiende sola.
+
+   `txt` es la MAGNITUD sin signo: la direccion la dice la flecha, como en
+   deltaTxt. Devuelve null si falta alguno de los dos numeros — un 0% inventado
+   se leeria como «no cambio», que es una afirmacion y no un hueco. */
+function vsMini(cur, prev, dias, diasPrev){
+  if(cur==null || prev==null) return null;
+  const porDia = dias>0 && diasPrev>0;
+  const a = porDia ? cur/dias : cur, b = porDia ? prev/diasPrev : prev, d = a-b;
+  const pct = b>0 ? (d/b*100) : null;
+  return {ok: d>=0, porDia: porDia,
+          txt: pct!=null ? Math.abs(pct).toFixed(1).replace('.',',')+'%'
+                         : '$ '+kf(Math.abs(d))};
+}
+/* Vestido para el renglon chico de un KPI. Va en su propia linea: en el
+   celular los KPI son dos por fila y el renglon ya trae texto. */
+const vsSub = (v, ym, nota) => !v ? '' :
+  '<br><span class="'+(v.ok?'up':'down')+'">'+(v.ok?'↑':'↓')+' '+v.txt+'</span>'+
+  (v.porDia?' por día':'')+' vs '+MESN[+ym.slice(5,7)-1]+(nota||'');
+const diasDelMes = ym => new Date(+ym.slice(0,4), +ym.slice(5,7), 0).getDate();
+
 /* lectura al tocar una barra */
 function tocable(cardEl, dias, vals, unidad){
   const svg=cardEl.querySelector('svg'); const out=cardEl.querySelector('.lectura');
@@ -1047,11 +1081,36 @@ function miniGrupo(){
   // planillas traen--. Se suma sobre las que lo tienen y se dice cuantas son,
   // como hace el KPI de facturacion estimada del grupo.
   const conNeto = dentro.filter(e=>e.minimercado.r.resultado_neto!=null);
+  // El «vs mes pasado» del grupo. La regla que lo hace honesto: cada cifra se
+  // suma sobre las estaciones que la tienen EN LOS DOS MESES. Un total de
+  // agosto armado con 2 minis contra uno de julio armado con 1 no es una
+  // comparacion — y es el error facil, porque los totales de arriba SI salen
+  // de todas. Por eso cada clave trae su propio `n`, y la tarjeta lo dice
+  // cuando no son todas, igual que hace el resultado final.
+  //
+  // `dias` son los dias cargados del subconjunto y `n` cuantas estaciones son:
+  // con el mes abierto la comparacion es por ESTACION-DIA (ver vsMini), que es
+  // la unica forma de que 33 dias cargados no se comparen contra dos meses
+  // enteros.
+  const conPrev = dentro.filter(e=>e.minimercado.prev && e.minimercado.prev_ym);
+  const pvYm = conPrev.length ? conPrev[0].minimercado.prev_ym : '';
+  const par = k => {
+    const es = conPrev.filter(e=>e.minimercado.r[k]!=null && e.minimercado.prev[k]!=null);
+    if(!es.length) return null;
+    return {cur: suma(es.map(e=>e.minimercado.r[k])),
+            prev: suma(es.map(e=>e.minimercado.prev[k])),
+            n: es.length, dias: suma(es.map(e=>e.minimercado.n||0)),
+            cerrado: es.every(e=>e.minimercado.cerrado)};
+  };
+  const cmp = {};
+  if(pvYm) ['ventas','ventas_netas','resultado','resultado_neto']
+    .forEach(k=>{ const q = par(k); if(q) cmp[k] = q; });
   return {ym, dentro, fuera, total: con.length,
     ventas: t('ventas'), netas, egresos: t('egresos'), resultado,
     margen: netas ? resultado/netas*100 : null,
     neto: conNeto.length ? suma(conNeto.map(e=>e.minimercado.r.resultado_neto)) : null,
-    nNeto: conNeto.length};
+    nNeto: conNeto.length,
+    pvYm, dpm: pvYm ? diasDelMes(pvYm) : 0, cmp};
 }
 
 function miniCard(){
@@ -1061,6 +1120,19 @@ function miniCard(){
   const kpi = (l,v,sub)=>'<div class="kpi"><div class="lbl">'+l+'</div>'+
     '<div class="val">'+v+'</div><div class="sub">'+sub+'</div></div>';
   const mx = Math.max(...g.dentro.map(e=>e.minimercado.r.ventas||0), 1);
+  // La variacion contra el mes pasado. `nota` sale cuando la comparacion no
+  // cubre a todos los minis del total: sin eso el porcentaje parece hablar de
+  // los mismos que la cifra de arriba y no es asi.
+  const vsG = k => {
+    const q = g.cmp[k];
+    if(!q) return '';
+    const nota = q.n < g.dentro.length ? ' · '+q.n+' de '+g.dentro.length : '';
+    return vsSub(vsMini(q.cur, q.prev, q.cerrado?0:q.dias, q.cerrado?0:q.n*g.dpm),
+                 g.pvYm, nota);
+  };
+  // Igual que en la tarjeta de una estacion: el margen y el resultado final
+  // recien se comparan cuando el mes cerro.
+  const vsGFin = k => (g.cmp[k] && g.cmp[k].cerrado) ? vsG(k) : '';
   // Debajo del nombre, HASTA CUANDO llega esa planilla. Sin eso el resumen
   // dice «$ 31,2 M» sin decir de que pedazo de mes: dos minis del mismo mes
   // pueden estar cargados hasta dias muy distintos y la cifra mas alta puede
@@ -1091,16 +1163,16 @@ function miniCard(){
                       : (g.total===1?'El unico del grupo':'Los '+g.total+' del grupo')+' · '+mes)+
       '. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
     '<div class="kpis" style="margin-top:8px">'+
-    kpi('Venta del mes','$ '+kf(g.ventas), g.dentro.length+' minimercado'+(g.dentro.length===1?'':'s')+' · '+mes)+
-    kpi('Ventas netas','$ '+kf(g.netas),'sin vencida, consumo ni devoluciones')+
+    kpi('Venta del mes','$ '+kf(g.ventas), g.dentro.length+' minimercado'+(g.dentro.length===1?'':'s')+' · '+mes+vsG('ventas'))+
+    kpi('Ventas netas','$ '+kf(g.netas),'sin vencida, consumo ni devoluciones'+vsG('ventas_netas'))+
     kpi('Salió de la caja','$ '+kf(g.egresos),'mercadería, insumos, gastos')+
     kpi('Margen bruto','$ '+kf(g.resultado),
-        (g.margen!=null?pct0(g.margen)+' de las netas · ':'')+'antes de sueldos')+
+        (g.margen!=null?pct0(g.margen)+' de las netas · ':'')+'antes de sueldos'+vsGFin('resultado'))+
     (g.neto!=null
       ? kpi('Resultado final','<span class="'+(g.neto>=0?'up':'down')+'">'+
           (g.neto>=0?'':'−')+'$ '+kf(Math.abs(g.neto))+'</span>',
           (g.nNeto<g.dentro.length?g.nNeto+' de '+g.dentro.length+' minimercados · ':'')+
-          'estructura aprox. descontada')
+          'estructura aprox. descontada'+vsGFin('resultado_neto'))
       : '')+
     '</div>'+
     '<div class="sec2">Venta por minimercado</div>'+g.dentro.map(fila).join('')+
@@ -1485,6 +1557,20 @@ function vEstacion(clave){
     const mm = e.minimercado;
     if(mm && mm.r){
       const r = mm.r, prom = mm.n ? Math.round(r.ventas/mm.n) : 0;
+      // El mes pasado, para comparar (lo arma db.mini_prev y viaja masticado:
+      // `prev` con las cifras, `prev_ym` cual mes es y `cerrado` si el mes que
+      // se muestra llego a su ultimo dia). De `cerrado` depende si se comparan
+      // totales o promedios por dia — ver vsMini.
+      const pv = mm.prev || null, pvYm = mm.prev_ym || '';
+      const dPv = pvYm ? diasDelMes(pvYm) : 0;
+      const vs = k => (pv && pvYm)
+        ? vsSub(vsMini(r[k], pv[k], mm.cerrado?0:mm.n, mm.cerrado?0:dPv), pvYm) : '';
+      // El margen y el resultado final NO se comparan con el mes abierto, ni
+      // siquiera por dia: la mercaderia se compra en tandas y el personal y la
+      // estructura se descuentan ENTEROS desde el dia 1, asi que hasta que el
+      // mes cierra los dos vienen hundidos por construccion. Un porcentaje ahi
+      // seria una cifra inventada, que es peor que no tener ninguna.
+      const vsFin = k => (pv && pvYm && mm.cerrado) ? vsSub(vsMini(r[k], pv[k], 0, 0), pvYm) : '';
       // El rotulo sale del `ym` que viaja, no de un texto fijo: los primeros
       // dias del mes la planilla del mini todavia es la del mes pasado, y
       // decir «mes en curso» ahi es mentira justo los dias en que uno mira.
@@ -1509,16 +1595,16 @@ function vEstacion(clave){
           'esto es lo último que hay')+(fMM?' · planilla al '+fMM:'')+
           '. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
         '<div class="kpis" style="margin-top:8px">'+
-        kpi('Venta del mes','$ '+kf(r.ventas), mm.n+' días cargados · $ '+kf(prom)+'/día')+
-        kpi('Ventas netas','$ '+kf(r.ventas_netas),'sin vencida, consumo ni devoluciones')+
+        kpi('Venta del mes','$ '+kf(r.ventas), mm.n+' días cargados · $ '+kf(prom)+'/día'+vs('ventas'))+
+        kpi('Ventas netas','$ '+kf(r.ventas_netas),'sin vencida, consumo ni devoluciones'+vs('ventas_netas'))+
         kpi('Salió de la caja','$ '+kf(r.egresos),'mercadería, insumos, gastos')+
         kpi('Margen bruto','$ '+kf(r.resultado),
-            (r.margen!=null?Math.round(r.margen*100)+'% de las netas · ':'')+'antes de sueldos')+
+            (r.margen!=null?Math.round(r.margen*100)+'% de las netas · ':'')+'antes de sueldos'+vsFin('resultado'))+
         (r.resultado_neto!=null
           ? kpi('Resultado final','<span class="'+(r.resultado_neto>=0?'up':'down')+'">'+
               (r.resultado_neto>=0?'':'−')+'$ '+kf(Math.abs(r.resultado_neto))+'</span>',
               (r.empleados?r.empleados+' empleado'+(r.empleados===1?'':'s')+' · ':'sin personal cargado · ')+
-              'estructura aprox. descontada')
+              'estructura aprox. descontada'+vsFin('resultado_neto'))
           : '')+
         '</div>'+
         (cobros.length?'<div class="sec2">Cómo se cobró</div>'+hbars(cobros,'$',true):'')+

@@ -81,6 +81,10 @@ const abrevK = x => x >= 1e6 ? (x / 1e6).toLocaleString('es-AR', {maximumFractio
                : x >= 1000 ? (x / 1000).toLocaleString('es-AR', {maximumFractionDigits: 1}) + ' k'
                : x.toLocaleString('es-AR');
 
+/** Compara porcentajes sin pelearse por el separador decimal: el panel escribe
+ *  «8,8%» y `toFixed` da «8.8». Lo que el test mira es la CIFRA. */
+const unaComa = t => String(t).replace(/,/g, '.');
+
 /** El texto chico de un KPI concreto. Sin esto un check de "%"" se cumple con
  *  el % de cualquier otra tarjeta y no distingue el mundo roto del arreglado. */
 function subDeKpi(html, etiqueta) {
@@ -1729,6 +1733,60 @@ seccion('PORT-37 - el minimercado en el celular');
   check(tg.indexOf(mm.archivo.split('-')[0]) >= 0,
     'con el archivo de donde sale');
 
+  // --- el «vs mes pasado» (PORT-42) ---------------------------------
+  // La trampa: Adrogue va por el dia 18 y julio tiene 31. Comparar los totales
+  // dice -47,0% y suena a derrumbe, cuando por dia viene 8,8% abajo. El mes en
+  // curso se compara POR DIA; los totales recien cuando el mes cierra.
+  check(mm.cerrado === false && mm.n === 18 && mm.prev_ym === '2026-07',
+    'guarda: el fixture tiene el mes ABIERTO (dia ' + mm.n + ') y con que comparar');
+  const un = unaComa;
+  const pctDe = (a, b) => Math.abs((a - b) / b * 100).toFixed(1);
+  const porDia = pctDe(mm.r.ventas / mm.n, mm.prev.ventas / 31);
+  const enTotal = pctDe(mm.r.ventas, mm.prev.ventas);
+  const subVenta = subDeKpi(g, 'Venta del mes');
+  check(un(subVenta || '').indexOf(un(porDia + '%')) >= 0 && /por día/.test(subVenta || ''),
+    'la venta del mes se compara POR DIA contra julio (' + porDia + '%): ' + subVenta);
+  check(un(subVenta || '').indexOf(un(enTotal + '%')) < 0,
+    'CORRECCION: y NO en totales (' + enTotal + '%), que compara 18 dias contra 31 ' +
+    'y hace pasar por derrumbe un mes que viene apenas abajo');
+  check(/julio/i.test(subVenta || ''),
+    'diciendo contra que mes compara, no un «vs mes pasado» a secas');
+  check(/por día/.test(subDeKpi(g, 'Ventas netas') || ''),
+    'las ventas netas tambien');
+  // El margen y el resultado final NO se comparan con el mes abierto: el
+  // personal y la estructura se descuentan enteros desde el dia 1.
+  check(!/vs |por día/.test(subDeKpi(g, 'Margen bruto') || ''),
+    'el margen NO se compara con el mes abierto: ' + subDeKpi(g, 'Margen bruto'));
+  check(!/vs |por día/.test(subDeKpi(g, 'Resultado final') || ''),
+    'ni el resultado final: hasta que el mes cierre vienen hundidos por construccion');
+
+  // Big Blue es el otro lado: mes CERRADO (los 31 dias de julio) y el mes
+  // anterior sacado de lo GUARDADO, no de la planilla.
+  const gbb = (irA(correr(d), '#est/bigblue').split('class="gr" data-g="mini"')[1] || '')
+    .split('class="gr"')[0];
+  const mbb = d.estaciones.find(e => e.clave === 'bigblue').minimercado;
+  check(mbb.cerrado === true && mbb.prev_origen === 'base',
+    'guarda: el fixture de Big Blue tiene el mes CERRADO y el anterior de la base');
+  const subBb = subDeKpi(gbb, 'Venta del mes');
+  const totBb = pctDe(mbb.r.ventas, mbb.prev.ventas);
+  check(un(subBb || '').indexOf(un(totBb + '%')) >= 0 && !/por día/.test(subBb || ''),
+    'con el mes CERRADO se comparan los totales (' + totBb + '%, sin «por día»): ' + subBb);
+  check(/junio/i.test(subBb || ''), 'contra junio, que es su mes anterior');
+  check(/vs /.test(subDeKpi(gbb, 'Margen bruto') || ''),
+    'y con el mes cerrado el margen SI se compara');
+
+  // Sin mes anterior no se dibuja nada: ni un «—» ni un 0%, que se leeria
+  // como «no cambio».
+  const dsp = fx.conMinimercado();
+  const msp = dsp.estaciones.find(e => e.clave === 'adrogue').minimercado;
+  delete msp.prev; delete msp.prev_ym;
+  const gsp = (irA(correr(dsp), '#est/adrogue').split('class="gr" data-g="mini"')[1] || '')
+    .split('class="gr"')[0];
+  check(!/vs |por día/.test(subDeKpi(gsp, 'Venta del mes') || ''),
+    'sin mes anterior no se compara nada: ' + subDeKpi(gsp, 'Venta del mes'));
+  check((subDeKpi(gsp, 'Venta del mes') || '').indexOf('días cargados') >= 0,
+    'pero el resto del renglon sigue igual');
+
   // Big Blue tiene el mini del mes PASADO: hay que decirlo, no hacerlo pasar
   // por el mes en curso. Es lo que ocurre el 1 de cada mes.
   const bb = sinTags((irA(correr(d), '#est/bigblue').split('class="gr" data-g="mini"')[1] || '')
@@ -1823,6 +1881,46 @@ seccion('el resumen de los minimercados en la vista general');
     'guarda: solo 1 de los 2 minimercados trae el resultado final');
   check(c2.indexOf('1 de 2 minimercados') >= 0,
     'el resultado final dice sobre cuantos se armo (1 de 2)');
+
+  // --- el «vs mes pasado» del grupo (PORT-42) ---
+  // Misma trampa que en la tarjeta de una estacion, y una mas: la comparacion
+  // solo puede sumar los minis que tienen mes anterior, y tiene que sumar los
+  // DOS meses sobre ESE MISMO subconjunto. Un total de agosto sobre 2 contra
+  // uno de julio sobre 1 compara cosas distintas.
+  const conPrev = ms.filter(m => m.prev && m.prev_ym);
+  check(conPrev.length === 2 && ms.every(m => !m.cerrado) &&
+        conPrev[0].prev_ym === conPrev[1].prev_ym,
+    'guarda: los dos minis del fixture tienen mes anterior (el mismo) y ninguno cerro');
+  const sp = k => conPrev.reduce((a, m) => a + (m.prev[k] || 0), 0);
+  const nd = conPrev.reduce((a, m) => a + m.n, 0);
+  const pctG = (a, b) => Math.abs((a - b) / b * 100).toFixed(1);
+  // Por estacion-dia: las dos sumas divididas por sus propios dias cargados.
+  const gPorDia = pctG(sum('ventas') / nd, sp('ventas') / (conPrev.length * 31));
+  const gTotal = pctG(sum('ventas'), sp('ventas'));
+  const subG = subDeKpi(card(correr(d2)), 'Venta del mes');
+  check(unaComa(subG || '').indexOf(unaComa(gPorDia + '%')) >= 0 && /por día/.test(subG || ''),
+    'el resumen del grupo compara POR DIA contra julio (' + gPorDia + '%): ' + subG);
+  check(unaComa(subG || '').indexOf(unaComa(gTotal + '%')) < 0,
+    'CORRECCION: y no en totales (' + gTotal + '%), que compara 33 dias cargados ' +
+    'contra dos meses enteros y da vuelta el signo');
+
+  // Si uno de los dos no tiene mes anterior, la comparacion sale SOLO del que
+  // lo tiene --y lo dice--, en vez de comparar 2 minis contra 1.
+  const d3 = fx.dosMinis();
+  const mbb3 = d3.estaciones.find(e => e.clave === 'bigblue').minimercado;
+  delete mbb3.prev; delete mbb3.prev_ym;
+  const c3 = card(correr(d3));
+  const mad3 = d3.estaciones.find(e => e.clave === 'adrogue').minimercado;
+  const soloAd = pctG(mad3.r.ventas / mad3.n, mad3.prev.ventas / 31);
+  const subG3 = subDeKpi(c3, 'Venta del mes');
+  check(unaComa(subG3 || '').indexOf(unaComa(soloAd + '%')) >= 0,
+    'con uno solo comparable, la variacion es la de ese (' + soloAd + '%): ' + subG3);
+  check(/1 de 2/.test(subG3 || ''),
+    'y dice sobre cuantos se armo, como hace el resultado final: ' + subG3);
+  const mezclaG = pctG(sum('ventas') / nd, mad3.prev.ventas / 31);
+  check(unaComa(subG3 || '').indexOf(unaComa(mezclaG + '%')) < 0,
+    'CORRECCION: no compara la venta de LOS DOS contra el mes anterior de UNO ' +
+    '(' + mezclaG + '%), que es el error facil');
 
   // --- meses distintos: el de julio NO entra al total ---
   const d1 = fx.conMinimercado();
