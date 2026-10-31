@@ -57,6 +57,8 @@ Y las que se agregaron con la paridad contra el panel de escritorio:
 | `camionSinImporte()` | un camión de 36.000 L **sin importe** entre dos que sí lo tienen. Si sus litros entran al divisor, el costo por litro cae de $ 2.220 a $ 1.291 y el margen se multiplica |
 | `unaSinPrecios()` | una estación que vendió todo el mes y **no tiene un solo precio**: su facturación no se puede estimar y no se suma al total del grupo |
 | `conZona()` | los precios de la zona. En el paquete real llega `zona: {}` porque ninguna estación tiene lat/lon en la config del escritorio, así que **este fixture es la única forma de ver la tarjeta** |
+| `conEstacionNueva()` | las 6 al día y una **séptima recién dada de alta**, con el mes entero pero **sin mes anterior**. El «vs mes pasado» del grupo tiene que salir de las 6 que están en los dos meses: con la nueva adentro del numerador daba ↑ 26,7% donde eran ↑ 10,3% |
+| `conSinArrancar()` | las 6 al día y una séptima marcada `sin_arrancar` (nunca mandó una planilla). No es un faltante: la banda sigue en «Sin faltantes» |
 
 El fixture también trae `pr_*` (precios) sólo en los días 3 y 15, para
 ejercitar el arrastre en los dos sentidos, y `pu` (lectura del puente de GNC)

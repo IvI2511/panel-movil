@@ -424,6 +424,86 @@ seccion('La proyeccion compara agosto contra el julio de LAS MISMAS estaciones')
 }
 
 // ===================================================================
+seccion('Una estacion nueva (sin mes anterior) no se lee como crecimiento del grupo');
+// ===================================================================
+{
+  // El caso de la septima estacion: entra en agosto y no estaba en julio. La
+  // proyeccion del grupo la suma (es venta de verdad), pero el % contra julio
+  // tiene que salir de LAS MISMAS seis de los dos lados. Antes `grupoPrev`
+  // dejaba afuera solo a las que no cargaron este mes, y la nueva inflaba el
+  // numerador: el grupo «crecia» lo que vende una estacion entera.
+  const tarjeta = (html) => {
+    const i = String(html).indexOf('Proyecci');
+    return i < 0 ? '' : sinTags(String(html).slice(i, i + 700));
+  };
+  const pct = t => (t.match(/[↑↓] [\d,]+%/) || ['nada'])[0];
+  const d = fx.conEstacionNueva();
+  const nueva = d.estaciones.find(e => e.clave === 'nueva');
+  check(nueva.dias.length === fx.HOY && nueva.prev.length === 0
+        && d.estaciones.filter(e => e.prev.length).length === 6,
+    'guarda: la nueva carga los ' + fx.HOY + ' dias de agosto, no tiene julio, y las otras 6 si');
+
+  const con6 = tarjeta(correr(fx.todasAlDia()).html('#vista'));
+  const con7 = tarjeta(correr(d).html('#vista'));
+  check(pct(con6) === '↑ 10,3%', 'guarda: sin la nueva el grupo da "↑ 10,3%" (dio ' + pct(con6) + ')');
+  check(pct(con7) === pct(con6),
+    'con la nueva el % vs julio sigue siendo el de las 6 que estan en los dos meses (dio ' +
+    pct(con7) + ', esperaba ' + pct(con6) + ')');
+  // Y la proyeccion grande SI la suma: es venta del grupo, solo que no se
+  // compara contra un julio que no tuvo.
+  const grande = t => (t.match(/Proyección agosto ([\d,]+ [kM]?)/) || [null, ''])[1];
+  check(grande(con7) !== '' && grande(con7) !== grande(con6),
+    'la proyeccion de agosto incluye a la nueva (' + grande(con7) + ' contra ' + grande(con6) + ' sin ella)');
+  check(/sin Estacion Nueva/.test(con7),
+    'la tarjeta dice a quien deja afuera de la comparacion');
+  check(!/sin Estacion Nueva/.test(con6),
+    'y sin estacion nueva no aparece ese aviso');
+
+  // El GNC del grupo tiene el mismo problema y el mismo arreglo.
+  const gen7 = irA(correr(d), '#');
+  const gnc = sinTags((gen7.split('Proyección de cierre · GNC')[1] || '').slice(0, 700));
+  const gen6 = irA(correr(fx.todasAlDia()), '#');
+  const gnc6 = sinTags((gen6.split('Proyección de cierre · GNC')[1] || '').slice(0, 700));
+  check(gnc.length > 0 && pct(gnc) === pct(gnc6),
+    'el % de GNC vs julio tambien sale de las mismas estaciones (dio ' + pct(gnc) +
+    ', esperaba ' + pct(gnc6) + ')');
+
+  // La media de julio sobre las barras del grupo: con la nueva adentro de las
+  // barras y afuera de la media, la linea quedaba baja y todo parecia record.
+  // Se mira la LEYENDA de la linea (`<i></i> media de julio`), no el texto
+  // suelto: el aviso tambien dice «media de julio».
+  const leyenda = h => /<i><\/i> media de julio/.test((h.split('Ventas diarias — grupo')[1] || '').slice(0, 1500));
+  const ventas = sinTags((gen7.split('Ventas diarias — grupo')[1] || '').slice(0, 1500));
+  check(!leyenda(gen7) && /no se dibuja la media de julio: sin Estacion Nueva/.test(ventas),
+    'el grafico de ventas del grupo no dibuja la media de julio y dice por que');
+  check(leyenda(gen6) && !/no se dibuja/.test(sinTags(gen6.split('Ventas diarias — grupo')[1] || '')),
+    'control: sin la nueva la media de julio sigue estando');
+  const acum = sinTags((gen7.split('Acumulado vs.')[1] || '').slice(0, 300));
+  check(/sin Estacion Nueva/.test(acum), 'el acumulado vs julio avisa que la deja afuera');
+}
+
+// ===================================================================
+seccion('Una estacion que todavia no mando NINGUNA planilla no figura como faltante');
+// ===================================================================
+{
+  const d = fx.conSinArrancar();
+  check(d.estaciones.length === 7 && d.estaciones[6].sin_arrancar === true
+        && d.estaciones[6].dias.length === 0,
+    'guarda: viene una septima con sin_arrancar y sin dias');
+  const v = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#'));
+  check(/Sin faltantes/.test(v), 'la banda sigue en «Sin faltantes» (no «Falta 1»)');
+  const kpi = subDeKpi(irA(correr(d, {hoy: '2026-08-22'}), '#'), 'Planillas');
+  check(/todas al día/.test(kpi), 'el KPI de Planillas dice «todas al día» (dice: ' + kpi.trim() + ')');
+  check(!/Estacion Nueva/.test(v), 'y no aparece en el resumen del grupo (ni en el ranking)');
+  // Control: la MISMA estacion sin la marca es un faltante de verdad.
+  const sinMarca = fx.conSinArrancar();
+  delete sinMarca.estaciones[6].sin_arrancar;
+  const f = sinTags(irA(correr(sinMarca, {hoy: '2026-08-22'}), '#'));
+  check(/Falta/.test(f) && !/Sin faltantes/.test(f) && /Estacion Nueva/.test(f),
+    'control: sin la marca, una estacion sin planillas SI se avisa como faltante');
+}
+
+// ===================================================================
 seccion('PORT-44 #4 - nada declarado y sin usar');
 // ===================================================================
 {
