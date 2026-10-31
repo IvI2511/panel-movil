@@ -385,6 +385,27 @@ function conCambioDePrecio() {
   return d;
 }
 
-module.exports = {conMinimercado, dosMinis, formaCambiada, paqueteViejo, base, conAtrasadaLider, todasAlDia, soloFaltaLaVacia, arranqueDeMes, unaSinPrecios, conPersonal, conZona, camionSinImporte, conCambioDePrecio,
+/* Las 6 al dia y una SEPTIMA recien dada de alta: carga agosto entero pero no
+   tiene julio, porque en julio todavia no era del grupo. Los numeros son
+   inventados, como todos los de este archivo (el repo es publico). Es el caso
+   del «vs mes pasado» del grupo: si la nueva entra en agosto y no en julio,
+   la comparacion da un salto que parece crecimiento. */
+function conEstacionNueva() {
+  const d = todasAlDia();
+  d.estaciones.push({clave: 'nueva', nombre: 'Estacion Nueva',
+                     dias: mes(HOY, {base: 6000, gncDe: () => 800, enc: 'Nora'}), prev: []});
+  return d;
+}
+
+/* Las 6 al dia y una septima dada de alta que todavia NO MANDO NINGUNA
+   planilla: movil.py la marca con `sin_arrancar`. No falta nada. */
+function conSinArrancar() {
+  const d = todasAlDia();
+  d.estaciones.push({clave: 'nueva', nombre: 'Estacion Nueva', dias: [], prev: [],
+                     sin_arrancar: true});
+  return d;
+}
+
+module.exports = {conEstacionNueva, conSinArrancar, conMinimercado, dosMinis, formaCambiada, paqueteViejo, base, conAtrasadaLider, todasAlDia, soloFaltaLaVacia, arranqueDeMes, unaSinPrecios, conPersonal, conZona, camionSinImporte, conCambioDePrecio,
                   hostil, hostilTodasAlDia, diasAlReves, XSS_TEXTO, XSS_ATRIB,
                   mesEnBlanco, MES, PREV, HOY, dd};

@@ -652,8 +652,13 @@ function notaHTML(n){
    Una estacion sin NINGUNA fila del mes SE QUEDA en la lista: es el caso
    extremo de "falta", no una estacion que no existe. Filtrarla hacia que el
    panel dijera "Sin faltantes - 5/5" siendo 6 estaciones. Todo lo que dibuja
-   consulta `sinDatos` antes de ir a buscar un ultimo dia que no existe. */
-const ESTS = (DATA.estaciones||[]).map(e0 => {
+   consulta `sinDatos` antes de ir a buscar un ultimo dia que no existe.
+   La excepcion es la que viene con `sin_arrancar`: una estacion recien dada de
+   alta que NUNCA mando una planilla (ni este mes ni ninguno). No tiene nada
+   que faltar, y dejarla adentro ponia la banda en «Falta 1» todos los dias
+   hasta su primera planilla. Desde ese dia el panel deja de marcarla y entra
+   sola al caso comun. */
+const ESTS = (DATA.estaciones||[]).filter(e0 => !(e0 && e0.sin_arrancar)).map(e0 => {
   // El JSON lo arma OTRO repo, que se publica por separado. Una clave que
   // falte no puede voltear el panel de las seis estaciones: sin `dias` la
   // estacion cae sola en el camino `sinDatos`, que ya existe y funciona.
@@ -788,6 +793,19 @@ const estPrev = ESTS.find(e=>e.prev.length);
 const mesPrev = estPrev ? MESN[Number(estPrev.prev[0].fecha.slice(5,7))-1] : 'mes pasado';
 const grupoDia = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).liq||0)));
 const grupoGnc = FECHAS.map(f=>suma(ESTS.map(e=>(e.porFecha[f]||{}).gnc||0)));
+/* Las que se pueden comparar contra el mes pasado: con datos en los DOS meses.
+   Una estacion nueva (o una cuyo mes anterior no se guardo) suma en este mes y
+   no en el anterior, y el grupo daba un salto que se leia como crecimiento.
+   `SIN_PREV` son las que quedan afuera de la comparacion; vacio si NINGUNA
+   tiene mes anterior, que es otro caso («s/d») y ya se muestra asi. */
+const COMPARABLES = ESTS.filter(e=>!e.sinDatos && e.prev.length);
+const SIN_PREV = COMPARABLES.length ? ESTS.filter(e=>!e.sinDatos && !e.prev.length) : [];
+const _cmp = SIN_PREV.length ? COMPARABLES : ESTS;
+const grupoDiaCmp = FECHAS.map(f=>suma(_cmp.map(e=>(e.porFecha[f]||{}).liq||0)));
+const grupoGncCmp = FECHAS.map(f=>suma(_cmp.map(e=>(e.porFecha[f]||{}).gnc||0)));
+const notaSinPrev = SIN_PREV.length
+  ? 'sin '+SIN_PREV.map(e=>e.nombre).join(', ')+' (no tiene'+(SIN_PREV.length>1?'n':'')+' mes anterior)'
+  : '';
 /* ¿Viaja la lectura del puente? Si NINGUNA estación tiene una sola, el campo
    no lo manda el programa que arma el paquete —pasa con las versiones
    anteriores— y no es que los encargados no la anoten. Decir «falta la
@@ -800,13 +818,15 @@ const grupoPrev = (()=>{ // julio, dia a dia (hasta 31)
   // suma su julio entero y la proyeccion se da vuelta. Medido sobre los
   // fixtures: pasaba de ↑7,3% a ↓5,9%, y la linea de «media de julio» saltaba
   // de estar abajo de todas las barras a estar arriba de casi todas.
+  // Y solo las que TIENEN mes anterior (COMPARABLES): del otro lado de cada
+  // comparacion va `grupoDiaCmp`, con las mismas estaciones.
   // Suma liq Y gnc. Antes acumulaba un numero suelto --solo litros-- y salia
   // {fecha, liq}: el gnc del mes anterior se caia ACA, en el armado, aunque
   // viajara completo en el JSON. Por eso la proyeccion de GNC del grupo decia
   // «Cerró julio: s/d» mientras cada estacion, que lee su `e.prev` derecho,
   // mostraba la comparativa bien. Y el grupo es la pantalla que se abre
   // primero, asi que era lo que se veia siempre.
-  const dias = {}; ESTS.filter(e=>!e.sinDatos).forEach(e=>e.prev.forEach(d=>{
+  const dias = {}; COMPARABLES.forEach(e=>e.prev.forEach(d=>{
     const x = dias[d.fecha] || (dias[d.fecha] = {liq:0, gnc:0});
     x.liq += d.liq; x.gnc += d.gnc||0;}));
   return Object.keys(dias).sort().map(f=>({fecha:f, liq:dias[f].liq, gnc:dias[f].gnc}));
@@ -1027,13 +1047,18 @@ function proyCard(acum, nCon, prevTot, quien, opts){
   const u = opts.unidad || 'L';
   if(!nCon)return '';
   const proy = acum/nCon*DIAS_MES;
-  const d = prevTot ? (proy-prevTot)/prevTot*100 : null;
+  // `opts.cmp` ({acum, nCon}): el lado «este mes» de la comparacion cuando no
+  // todas tienen mes anterior. La proyeccion grande es la del grupo entero;
+  // el % se saca proyectando SOLO las que estan en los dos meses.
+  const c = opts.cmp;
+  const proyC = c ? (c.nCon ? c.acum/c.nCon*DIAS_MES : 0) : proy;
+  const d = prevTot ? (proyC-prevTot)/prevTot*100 : null;
   return '<div class="card"><h2>Proyección de cierre'+(opts.etiqueta?' · '+opts.etiqueta:'')+'</h2>'+
     '<div class="baj">'+quien+' · a este ritmo</div>'+
     '<div class="kpis" style="margin-top:2px">'+
     '<div class="kpi" style="border:0;padding:0"><div class="lbl">Proyección '+mesAct+'</div>'+
     '<div class="val">'+kf(Math.round(proy))+' '+u+'</div>'+
-    (d==null?'':'<div class="sub">'+flecha(d)+' vs '+mesPrev+'</div>')+'</div>'+
+    (d==null?'':'<div class="sub">'+flecha(d)+' vs '+mesPrev+(opts.nota?' · '+opts.nota:'')+'</div>')+'</div>'+
     '<div class="kpi" style="border:0;padding:0"><div class="lbl">Cerró '+mesPrev+'</div>'+
     '<div class="val">'+(prevTot?kf(prevTot)+' '+u:'s/d')+'</div>'+
     '<div class="sub">'+nCon+' de '+DIAS_MES+' días cargados</div></div></div></div>';
@@ -1194,11 +1219,17 @@ function vGeneral(){
   // error que dio vuelta el signo de tres porcentajes en el barrido anterior.
   const mediosDia = MEDIOS.map(m=>({l:m.l,c:m.c,
     v:suma(frescas.map(e=>(e.porFecha[fechaMax]||{})[m.k]||0))})).filter(m=>m.v>0);
-  const acumA=[]; grupoDia.reduce((a,v)=>{acumA.push(a+v);return a+v;},0);
+  // El acumulado se compara contra el mes pasado: las mismas estaciones de
+  // los dos lados (ver COMPARABLES).
+  const acumA=[]; grupoDiaCmp.reduce((a,v)=>{acumA.push(a+v);return a+v;},0);
   const acumB=[]; grupoPrev.reduce((a,d)=>{acumB.push(a+d.liq);return a+d.liq;},0);
   const porDow=porDowDe(FECHAS, grupoDia);
   const rank=ESTS.slice().sort((a,b)=>b.enDia-a.enDia);
-  const promPrevG = grupoPrev.length? suma(grupoPrev.map(d=>d.liq))/grupoPrev.length : 0;
+  // La media del mes pasado va como linea sobre las barras del grupo ENTERO:
+  // si alguna no tiene mes anterior, la linea seria de menos estaciones que
+  // las barras y se dejaria de dibujar (se dice abajo por que).
+  const promPrevG = (grupoPrev.length && !SIN_PREV.length)
+    ? suma(grupoPrev.map(d=>d.liq))/grupoPrev.length : 0;
 
   const feGrupo = factGrupo();
 
@@ -1241,15 +1272,19 @@ function vGeneral(){
 
   <div class="divisor">Del mes</div>
 
-  ${proyCard(suma(grupoDia), grupoDia.filter(v=>v>0).length, Math.round(suma(grupoPrev.map(d=>d.liq))), 'Todo el grupo')}
+  ${proyCard(suma(grupoDia), grupoDia.filter(v=>v>0).length, Math.round(suma(grupoPrev.map(d=>d.liq))), 'Todo el grupo',
+      SIN_PREV.length?{cmp:{acum:suma(grupoDiaCmp), nCon:grupoDiaCmp.filter(v=>v>0).length}, nota:notaSinPrev}:{})}
 
   ${grupoGnc.some(v=>v>0)?proyCard(suma(grupoGnc), grupoGnc.filter(v=>v>0).length,
-      Math.round(suma(grupoPrev.map(d=>d.gnc||0))), 'Todo el grupo', {unidad:'m³', etiqueta:'GNC'}):''}
+      Math.round(suma(grupoPrev.map(d=>d.gnc||0))), 'Todo el grupo',
+      Object.assign({unidad:'m³', etiqueta:'GNC'},
+        SIN_PREV.length?{cmp:{acum:suma(grupoGncCmp), nCon:grupoGncCmp.filter(v=>v>0).length}, nota:notaSinPrev}:{})):''}
 
   <div class="card" id="gVentas"><h2>Ventas diarias — grupo</h2>
     <div class="baj">Litros líquidos por día · ${mesAct}</div><div class="cch"></div>
     <div class="ref"><span style="color:${PREV_C}"><i></i> media del mes</span>
-      ${promPrevG?`<span style="color:${GNC_C}"><i></i> media de ${mesPrev}</span>`:''}</div>
+      ${promPrevG?`<span style="color:${GNC_C}"><i></i> media de ${mesPrev}</span>`
+        :(SIN_PREV.length&&grupoPrev.length?`<span>no se dibuja la media de ${mesPrev}: ${notaSinPrev}</span>`:'')}</div>
     <div class="lectura">Tocá una barra para ver el día.</div></div>
 
   <div class="card" id="gComb"><h2>Combustibles del mes</h2>
@@ -1261,6 +1296,7 @@ function vGeneral(){
     ${hbars(medios,'$',true)}</div>
 
   <div class="card"><h2>Acumulado vs. ${mesPrev}</h2><div class="baj">Litros acumulados por día del mes</div>
+    ${SIN_PREV.length&&acumB.length?'<div class="baj">'+notaSinPrev+'</div>':''}
     ${lineas(acumA, acumB)}
     <div class="ref"><span style="color:var(--acc)"><i style="border-top-style:solid"></i> ${mesAct}</span>
       ${acumB.length?`<span style="color:${PREV_C}"><i></i> ${mesPrev}</span>`:''}</div></div>
