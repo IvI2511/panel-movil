@@ -494,7 +494,22 @@ seccion('Una estacion que todavia no mando NINGUNA planilla no figura como falta
   check(/Sin faltantes/.test(v), 'la banda sigue en «Sin faltantes» (no «Falta 1»)');
   const kpi = subDeKpi(irA(correr(d, {hoy: '2026-08-22'}), '#'), 'Planillas');
   check(/todas al día/.test(kpi), 'el KPI de Planillas dice «todas al día» (dice: ' + kpi.trim() + ')');
-  check(!/Estacion Nueva/.test(v), 'y no aparece en el resumen del grupo (ni en el ranking)');
+  // Se VE (PNL-24, como en el escritorio), pero sólo en su ficha: ni en los
+  // KPI de arriba ni en la comparativa ni en el ranking de abajo.
+  const [arriba, resto] = v.split('Estaciones — tocá para abrir su panel');
+  const fichas = (resto || '').split('Comparativa')[0];
+  const abajo = (resto || '').split('Comparativa').slice(1).join('Comparativa');
+  check(/Estacion Nueva Por arrancar/.test(fichas) && /Todavía no mandó ninguna planilla/.test(fichas),
+    'se ve una ficha «Por arrancar» de la estacion nueva');
+  check(!/Estacion Nueva/.test(arriba) && !/Estacion Nueva/.test(abajo),
+    'y no aparece en el resumen del grupo (ni en la comparativa ni en el ranking)');
+  const nav = sinTags(correr(d, {hoy: '2026-08-22'}).html('#navEst'));
+  check(/Estacion Nueva por arrancar/.test(nav), 'el menu la lista como «por arrancar» (dice: ' + nav.slice(-60) + ')');
+  const det = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#est/nueva'));
+  check(/Estacion Nueva/.test(det) && /Por arrancar/.test(det) && /primera planilla/.test(det),
+    'su detalle explica que todavia no arranco (dice: ' + det.slice(0, 80) + ')');
+  const cinta = sinTags(correr(d, {hoy: '2026-08-22'}).html('#cinta'));
+  check(!/Estacion Nueva/.test(cinta), 'la cinta de abajo no la nombra');
   // Control: la MISMA estacion sin la marca es un faltante de verdad.
   const sinMarca = fx.conSinArrancar();
   delete sinMarca.estaciones[6].sin_arrancar;

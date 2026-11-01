@@ -207,6 +207,10 @@
      118px la dejaba apretada contra el borde y la tarjeta medía 87px contra
      163 de las demas. Sin esa columna se acomoda sola. */
   .est.vacia{grid-template-columns:1fr}
+  /* La que todavia no arranco: punteada y en azul, para que no se lea como
+     una faltante (amarillo) ni como una al dia (verde). */
+  .est.nueva{border-style:dashed}
+  .est .pill-nueva{background:var(--acc-soft); color:var(--acc)}
   /* El aviso de recargar() tiene que poder salir desde CUALQUIER pantalla:
      antes solo existia en las dos de error, asi que desde el panel normal
      el boton «↻ Actualizar datos» no hacia absolutamente nada sin red. */
@@ -657,8 +661,14 @@ function notaHTML(n){
    alta que NUNCA mando una planilla (ni este mes ni ninguno). No tiene nada
    que faltar, y dejarla adentro ponia la banda en «Falta 1» todos los dias
    hasta su primera planilla. Desde ese dia el panel deja de marcarla y entra
-   sola al caso comun. */
-const ESTS = (DATA.estaciones||[]).filter(e0 => !(e0 && e0.sin_arrancar)).map(e0 => {
+   sola al caso comun.
+   Afuera de ESTS no quiere decir invisible (PNL-24): `NUEVAS` las muestra como
+   «Por arrancar» en su ficha, el menu y su detalle, como el escritorio, sin
+   entrar a ninguna cuenta. Nombre y clave, con el mismo cuidado que en ESTS. */
+const NUEVAS = (DATA.estaciones||[]).filter(e0 => e0 && e0.sin_arrancar).map(e0 => ({
+  nombre: esc(e0.nombre||''), nombreCrudo: String(e0.nombre||''),
+  clave: String(e0.clave||'').replace(/[^a-z0-9_-]/gi,'')}));
+const ESTS =(DATA.estaciones||[]).filter(e0 => !(e0 && e0.sin_arrancar)).map(e0 => {
   // El JSON lo arma OTRO repo, que se publica por separado. Una clave que
   // falte no puede voltear el panel de las seis estaciones: sin `dias` la
   // estacion cae sola en el camino `sinDatos`, que ya existe y funciona.
@@ -1039,6 +1049,12 @@ function fichaEst(e){
     '<div class="gnc">'+(e.gnc ? 'GNC '+fmt.format(e.gnc)+' m³'
       : e.tieneGnc ? 'GNC 0 m³ ese día' : 'Sin GNC este mes')+'</div></div>';
 }
+function fichaNueva(e){
+  return '<div class="est vacia nueva" tabindex="0" role="button" data-ruta="#est/'+e.clave+'">'+
+    '<div class="cab"><span class="sem" style="background:var(--acc)"></span>'+
+    '<span class="nom">'+e.nombre+'</span><span class="enc pill-nueva">Por arrancar</span></div>'+
+    '<div class="cmp">Todavía no mandó ninguna planilla</div></div>';
+}
 /* `opts.etiqueta` cuelga del titulo (queda «Proyección de cierre · GNC») y
    `opts.unidad` cambia L por m³. El escritorio proyecta liquido y GNC por
    separado en las dos vistas (genProy y detProy); aca habia una sola. */
@@ -1253,7 +1269,7 @@ function vGeneral(){
   ${bandaHTML()}
 
   <section><h2 class="sec">Estaciones — tocá para abrir su panel</h2>
-  <div class="tarjetas">${ESTS.map(fichaEst).join('')}</div></section>
+  <div class="tarjetas">${ESTS.map(fichaEst).join('')}${NUEVAS.map(fichaNueva).join('')}</div></section>
 
   <div class="card"><h2>Comparativa · ${diaLbl(fechaMax)}</h2><div class="baj">Litros por estación</div>
     ${rank.map(e=>'<button class="hb" style="width:100%" data-ruta="#est/'+e.clave+'"><span class="n">'+e.nombre+'</span>'+
@@ -1334,6 +1350,18 @@ function vGeneral(){
 }
 
 function vEstacion(clave){
+  const n = NUEVAS.find(x=>x.clave===clave);
+  if(n){
+    $('#vista').innerHTML =
+      '<button class="volver" data-ruta="#general">‹ Vista general</button>'+
+      '<div class="est-cab"><span class="sem" style="background:var(--acc)"></span><h1>'+n.nombre+'</h1>'+
+      '<span class="tag" style="background:var(--acc-soft);color:var(--acc)">Por arrancar</span></div>'+
+      '<div class="card"><h2>Todavía no mandó ninguna planilla</h2>'+
+      '<div class="baj">Es una estación nueva del grupo. Hasta su primera planilla '+
+      'no cuenta como faltante ni entra en los totales; desde ese día aparece '+
+      'sola como las demás.</div></div>';
+    return;
+  }
   const e = ESTS.find(x=>x.clave===clave); if(!e){location.hash='#general';return;}
   // Sin una fila del mes no hay ultimo dia: todo lo de abajo arranca por
   // diaLbl(e.ult.fecha) y reventaria. Se explica el faltante y se corta.
@@ -1817,7 +1845,8 @@ function render(){
   const h=location.hash||'#general';
   window.scrollTo(0,0);
   if(h.startsWith('#est/')){const cl=h.slice(5); vEstacion(cl);
-    const e=ESTS.find(x=>x.clave===cl); $('#titVista').textContent=e?e.nombreCrudo:'Panel Estaciones';}
+    const e=ESTS.find(x=>x.clave===cl)||NUEVAS.find(x=>x.clave===cl);
+    $('#titVista').textContent=e?e.nombreCrudo:'Panel Estaciones';}
   else {vGeneral(); $('#titVista').textContent='Panel Estaciones';}
   document.querySelectorAll('.navit').forEach(b=>b.classList.toggle('act',b.dataset.ruta===h));
   cerrarNav();
@@ -1841,7 +1870,9 @@ $('#navEst').innerHTML = ESTS.map(e=>
   // El punto es verde fijo por CSS: la que no cargo nada quedaba marcada como
   // al dia justo en el menu, mientras la banda y la ficha la daban por faltante.
   (e.sinDatos?' style="background:var(--warn)"':'')+'></span><span>'+e.nombre+'</span><small>'+
-  (e.sinDatos?'sin planillas':kf(e.liq)+' L')+'</small></button>').join('');
+  (e.sinDatos?'sin planillas':kf(e.liq)+' L')+'</small></button>').join('') +
+  NUEVAS.map(e=>'<button class="navit" data-ruta="#est/'+e.clave+'"><span class="pt" '+
+    'style="background:var(--acc)"></span><span>'+e.nombre+'</span><small>por arrancar</small></button>').join('');
 
 /* ticker inferior */
 const tk=[ '<b>'+fmt.format(TOT.liq)+' L</b> el '+diaLbl(fechaMax)+' en el grupo ('+(TOT.delta>=0?'+':'−')+Math.abs(TOT.delta).toFixed(1).replace('.',',')+'%)',
