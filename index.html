@@ -352,7 +352,19 @@
     .wrap{margin-left:0; margin-right:auto}
   }
 
+  /* Al cambiar de pantalla (general <-> estacion) la nueva aparece con un
+     fundido cortito en vez de saltar de golpe. Solo opacidad: un transform en
+     .wrap volveria relativo a el todo lo `position:fixed` de adentro. Y al
+     tocar una ficha o un renglon, que se note el toque. */
+  @keyframes entra{from{opacity:0}to{opacity:1}}
+  .wrap.entra{animation:entra .18s ease-out}
+  .est,.hb{transition:transform .12s ease, background-color .12s ease}
+  .est:active,.hb:active{transform:scale(.985)}
+
   @media (prefers-reduced-motion: reduce){
+    .wrap.entra{animation:none}
+    .est,.hb{transition:none}
+    .est:active,.hb:active{transform:none}
     .ticker{overflow-x:auto}
     .ticker .cinta{animation:none}
     html{scroll-behavior:auto}
@@ -1881,6 +1893,8 @@ function render(){
     const e=ESTS.find(x=>x.clave===cl)||NUEVAS.find(x=>x.clave===cl);
     $('#titVista').textContent=e?e.nombreCrudo:'Panel Estaciones';}
   else {vGeneral(); $('#titVista').textContent='Panel Estaciones';}
+  // Reinicia el fundido: sacar la clase, forzar un reflow y volver a ponerla.
+  const vi=$('#vista'); vi.classList.remove('entra'); void vi.offsetWidth; vi.classList.add('entra');
   document.querySelectorAll('.navit').forEach(b=>b.classList.toggle('act',b.dataset.ruta===h));
   cerrarNav();
 }
