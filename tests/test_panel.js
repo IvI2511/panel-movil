@@ -1414,6 +1414,16 @@ seccion('Paridad: control de GNC, margen bruto y precios vigentes');
   check(t2.indexOf('Diferencia') >= 0 && t2.indexOf('+20 m³') >= 0,
     'con lecturas de dias seguidos, la diferencia es +20 m³ (dice: ' +
     ((t2.match(/Diferencia[^)]*\)/) || ['nada'])[0]) + ')');
+  // La lectura del dia ESTA pero repite la anterior: puenteGnc da `nd` igual
+  // que si faltara. El aviso tiene que decir las dos cosas, como el
+  // escritorio, o manda a buscar una celda vacia que no lo esta.
+  const repite = fx.base();
+  const ar = repite.estaciones.find(e => e.clave === 'adrogue');
+  ar.dias[ar.dias.length - 2].pu = ar.dias[ar.dias.length - 1].pu;
+  const t3 = sinTags(irA(correr(repite), '#est/adrogue'));
+  check(/Falta la lectura del puente en la planilla de este día, o repite la del día anterior/.test(t3),
+    'con la lectura repetida, el aviso dice que puede faltar O repetirse (dice: ' +
+    ((t3.match(/puente vs\. surtidores[^.]*\./) || ['nada'])[0]) + ')');
   // El GNC va SIN semaforo: es spec del usuario (22-jul-2026, v1.4.1). No
   // hay colores por rango ni alertas, es dato de referencia.
   const bloque = (vista.match(/puente[^]{0,700}/i) || [''])[0];
