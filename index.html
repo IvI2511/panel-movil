@@ -355,16 +355,18 @@
   /* Al cambiar de pantalla (general <-> estacion) la nueva aparece con un
      fundido cortito en vez de saltar de golpe. Solo opacidad: un transform en
      .wrap volveria relativo a el todo lo `position:fixed` de adentro. Y al
-     tocar una ficha o un renglon, que se note el toque. */
+     tocar una ficha o un renglon, que se note el toque. Solo los que LLEVAN
+     a algun lado (`[data-ruta]`): las barras de productos y medios de pago
+     tambien son `.hb` y no se tocan; si se achicaran parecerian botones. */
   @keyframes entra{from{opacity:0}to{opacity:1}}
   .wrap.entra{animation:entra .18s ease-out}
-  .est,.hb{transition:transform .12s ease, background-color .12s ease}
-  .est:active,.hb:active{transform:scale(.985)}
+  .est[data-ruta],.hb[data-ruta]{transition:transform .12s ease, background-color .12s ease}
+  .est[data-ruta]:active,.hb[data-ruta]:active{transform:scale(.985)}
 
   @media (prefers-reduced-motion: reduce){
     .wrap.entra{animation:none}
-    .est,.hb{transition:none}
-    .est:active,.hb:active{transform:none}
+    .est[data-ruta],.hb[data-ruta]{transition:none}
+    .est[data-ruta]:active,.hb[data-ruta]:active{transform:none}
     .ticker{overflow-x:auto}
     .ticker .cinta{animation:none}
     html{scroll-behavior:auto}

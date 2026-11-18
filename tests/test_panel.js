@@ -655,6 +655,23 @@ seccion('Aspro: su minimercado junto a los otros, con mes pasado y sin el');
 }
 
 // ===================================================================
+seccion('El achique al tocar es solo para lo que se puede tocar');
+// ===================================================================
+// Las barras de productos y de medios de pago tambien son `.hb`, pero no
+// llevan a ningun lado: si se achicaran al tocarlas parecerian botones.
+{
+  const css = (HTML.match(/<style>([^]*?)<\/style>/) || [])[1] || '';
+  check(css.length > 0, 'guarda: se encontro el CSS');
+  const reglas = css.match(/[^{}]*:active[^{}]*\{[^}]*scale[^}]*\}/g) || [];
+  check(reglas.length > 0, 'guarda: hay una regla de achique');
+  check(reglas.every(r => r.split('{')[0].split(',').every(s => /\[data-ruta\]:active/.test(s))),
+    'todas las reglas de achique piden [data-ruta] (son: ' + reglas.map(r => r.split('{')[0].trim()).join(' | ') + ')');
+  const est = irA(correr(fx.conMinimercado(), {hoy: '2026-08-22'}), '#est/adrogue');
+  check(/<div class="hb"><span class="n">/.test(est) && !/<div class="hb"[^>]*data-ruta/.test(est),
+    'las barras que no se tocan no llevan data-ruta');
+}
+
+// ===================================================================
 seccion('PORT-44 #4 - nada declarado y sin usar');
 // ===================================================================
 {
