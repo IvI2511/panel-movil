@@ -519,6 +519,79 @@ seccion('Una estacion que todavia no mando NINGUNA planilla no figura como falta
 }
 
 // ===================================================================
+seccion('Aspro: una estacion del grupo que todavia no opera sale como «Próximamente»');
+// ===================================================================
+{
+  const d = fx.conProximamente();
+  const a = d.estaciones.find(x => x.clave === 'aspro');
+  check(d.estaciones.length === 8 && a && a.sin_arrancar === true && a.proximamente === true
+        && d.estaciones.indexOf(a) < d.estaciones.findIndex(x => x.clave === 'nueva'),
+    'guarda: ocho estaciones, Aspro con las dos marcas y ANTES de la nueva en el JSON');
+  const v = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#'));
+  check(/Sin faltantes/.test(v), 'la banda sigue en «Sin faltantes»');
+  const kpi = subDeKpi(irA(correr(d, {hoy: '2026-08-22'}), '#'), 'Planillas');
+  check(/todas al día/.test(kpi), 'el KPI de Planillas dice «todas al día» (dice: ' + kpi.trim() + ')');
+  const [arriba, resto] = v.split('Estaciones — tocá para abrir su panel');
+  const fichas = (resto || '').split('Comparativa')[0];
+  const abajo = (resto || '').split('Comparativa').slice(1).join('Comparativa');
+  check(/Aspro Próximamente/.test(fichas) && /Se está poniendo en marcha/.test(fichas),
+    'se ve su ficha «Próximamente»');
+  check(!/Aspro Por arrancar/.test(fichas), 'y no dice «Por arrancar»');
+  check(/Estacion Nueva Por arrancar/.test(fichas), 'la nueva sin la marca sigue diciendo «Por arrancar»');
+  check(fichas.indexOf('Estacion Nueva') < fichas.indexOf('Aspro'),
+    'Aspro va al final, despues de la nueva');
+  check(!/Aspro/.test(arriba) && !/Aspro/.test(abajo),
+    'y no aparece en los KPI, la comparativa ni el ranking');
+  const fichasHtml = irA(correr(d, {hoy: '2026-08-22'}), '#');
+  check(/class="est vacia nueva prox"[^>]*data-ruta="#est\/aspro"/.test(fichasHtml),
+    'su ficha lleva la clase apagada `prox`');
+  const nav = sinTags(correr(d, {hoy: '2026-08-22'}).html('#navEst'));
+  check(/Aspro próximamente/.test(nav) && nav.indexOf('Estacion Nueva') < nav.indexOf('Aspro'),
+    'el menu la lista al final como «próximamente» (dice: ' + nav.slice(-60) + ')');
+  const det = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#est/aspro'));
+  check(/Aspro/.test(det) && /Próximamente/.test(det) && /ya es del grupo/.test(det)
+        && /primera planilla/.test(det),
+    'su detalle explica que se esta poniendo en marcha (dice: ' + det.slice(0, 90) + ')');
+  check(!/minimercado ya está cargando/.test(det), 'sin minimercado, el detalle no lo menciona');
+  const cinta = sinTags(correr(d, {hoy: '2026-08-22'}).html('#cinta'));
+  check(!/Aspro/.test(cinta), 'la cinta de abajo no la nombra');
+  // Un panel-movil.json armado por un escritorio que manda `proximamente` sin
+  // `sin_arrancar`: sin dias tampoco es un faltante.
+  const soloProx = fx.conProximamente();
+  delete soloProx.estaciones.find(x => x.clave === 'aspro').sin_arrancar;
+  const sp = sinTags(irA(correr(soloProx, {hoy: '2026-08-22'}), '#'));
+  check(/Sin faltantes/.test(sp) && /Aspro Próximamente/.test(sp),
+    'con `proximamente` solo y sin dias, tampoco es un faltante');
+  // Con su primera planilla deja de ser «Próximamente» aunque venga la marca.
+  const arranco = fx.conProximamente();
+  const a2 = arranco.estaciones.find(x => x.clave === 'aspro');
+  delete a2.sin_arrancar;
+  a2.dias = arranco.estaciones[0].dias.slice();
+  const ar = sinTags(irA(correr(arranco, {hoy: '2026-08-22'}), '#'));
+  check(!/Aspro Próximamente/.test(ar) && /Aspro/.test(ar.split('Comparativa').slice(1).join('')),
+    'con dias se muestra normal: entra a la comparativa y pierde el rotulo');
+}
+
+// ===================================================================
+seccion('Aspro: su minimercado entra al resumen aunque la estacion no opere');
+// ===================================================================
+{
+  const d = fx.conProximamenteYMini();
+  check(d.estaciones.find(x => x.clave === 'aspro').minimercado.r.ventas === 1000000,
+    'guarda: Aspro trae minimercado');
+  const v = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#'));
+  const mini = (v.split('Minimercados ·')[1] || '');
+  check(/Aspro/.test(mini) && /Venta del mes \$ 1 M/.test(mini),
+    'el resumen de Minimercados la lista (dice: ' + mini.slice(0, 120) + ')');
+  check(/El unico del grupo/.test(mini), 'y cuenta su mini como del grupo');
+  const det = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#est/aspro'));
+  check(/minimercado ya está cargando/.test(det), 'su detalle avisa donde ver el minimercado');
+  // Control: sin minimercado no hay resumen.
+  const sin = sinTags(irA(correr(fx.conProximamente(), {hoy: '2026-08-22'}), '#'));
+  check(!/Minimercados ·/.test(sin), 'control: sin mini no sale el resumen');
+}
+
+// ===================================================================
 seccion('PORT-44 #4 - nada declarado y sin usar');
 // ===================================================================
 {

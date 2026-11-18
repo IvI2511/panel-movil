@@ -406,6 +406,28 @@ function conSinArrancar() {
   return d;
 }
 
-module.exports = {conEstacionNueva, conSinArrancar, conMinimercado, dosMinis, formaCambiada, paqueteViejo, base, conAtrasadaLider, todasAlDia, soloFaltaLaVacia, arranqueDeMes, unaSinPrecios, conPersonal, conZona, camionSinImporte, conCambioDePrecio,
+/* Las 6 al dia, una «Por arrancar» y la octava, Aspro, que ya es del grupo
+   pero todavia no opera: movil.py la manda con `sin_arrancar` Y
+   `proximamente` (un panel viejo la sigue viendo «Por arrancar»). Va
+   ADELANTE de la nueva en el JSON a proposito: el panel la tiene que dejar
+   al final igual. */
+function conProximamente() {
+  const d = conSinArrancar();
+  d.estaciones.splice(6, 0, {clave: 'aspro', nombre: 'Aspro', dias: [], prev: [],
+                             sin_arrancar: true, proximamente: true});
+  return d;
+}
+
+/* La misma, con el minimercado de Aspro ya andando (arranca antes que la
+   planilla diaria). Cifras de mentira, redondas. */
+function conProximamenteYMini() {
+  const d = conProximamente();
+  d.estaciones.find(x => x.clave === 'aspro').minimercado = {
+    ym: '2026-08', archivo: 'ASPRO-18-08-2026-Minimercado-ENCARGADO.xlsx', n: 18,
+    r: {ventas: 1000000, ventas_netas: 900000, egresos: 600000, resultado: 300000}};
+  return d;
+}
+
+module.exports = {conProximamente, conProximamenteYMini, conEstacionNueva, conSinArrancar, conMinimercado, dosMinis, formaCambiada, paqueteViejo, base, conAtrasadaLider, todasAlDia, soloFaltaLaVacia, arranqueDeMes, unaSinPrecios, conPersonal, conZona, camionSinImporte, conCambioDePrecio,
                   hostil, hostilTodasAlDia, diasAlReves, XSS_TEXTO, XSS_ATRIB,
                   mesEnBlanco, MES, PREV, HOY, dd};
