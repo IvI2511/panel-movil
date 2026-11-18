@@ -424,21 +424,22 @@ function conProximamenteYMini() {
   const d = conProximamente();
   d.estaciones.find(x => x.clave === 'aspro').minimercado = {
     ym: '2026-08', archivo: 'ASPRO-18-08-2026-Minimercado-ENCARGADO.xlsx', n: 18,
-    r: {ventas: 1000000, ventas_netas: 900000, egresos: 600000, resultado: 300000}};
+    r: {ventas: 1000000, ventas_netas: 900000, egresos: 600000, resultado: 300000,
+        efectivo: 600000, mercado_pago: 400000, mercaderia: 500000, insumos: 100000}};
   return d;
 }
 
 /* Las OCHO del grupo, para medir el layout (tools/verificar_layout.py): las
-   seis con minimercado, una septima al dia con nombre largo y Aspro
-   «Próximamente». Es lo que se ve hoy en el telefono. */
+   seis de conMinimercado() (dos con minimercado), una septima al dia con nombre largo y Aspro
+   «Próximamente» con su minimercado ya andando (asi #est/aspro se mide con
+   la tarjeta del mini adentro). Es lo que se ve hoy en el telefono. */
 function ochoEstaciones() {
   const d = conMinimercado();
   const ady = d.estaciones.find(x => x.clave === 'adrogue');
   d.estaciones.push({clave: 'septima', nombre: 'Estacion Septima',
                      dias: JSON.parse(JSON.stringify(ady.dias)),
                      prev: JSON.parse(JSON.stringify(ady.prev || []))});
-  d.estaciones.push({clave: 'aspro', nombre: 'Aspro', dias: [], prev: [],
-                     sin_arrancar: true, proximamente: true});
+  d.estaciones.push(conProximamenteYMini().estaciones.find(x => x.clave === 'aspro'));
   return d;
 }
 

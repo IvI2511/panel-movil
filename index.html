@@ -1384,14 +1384,103 @@ function vGeneral(){
   });
 }
 
+/* Minimercado (PORT-37). El resumen llega ya masticado por movil.py: `r`
+   con los totales, `n` cuantos dias hay cargados y `previos` los meses
+   cerrados. Las cuentas son las del escritorio (detMini en panel.html).
+   Va SIN semaforo, y eso es deliberado: la mercaderia se cuenta por lo
+   COMPRADO en el mes y no por lo vendido --nadie lleva stock--, asi que un
+   mes con mucha compra sobre el final da un margen bajo que no significa
+   nada malo. Un color ahi seria inventar un juicio que el dato no banca.
+   Es una funcion suelta (nov-2026) porque la usan DOS pantallas: la pestana
+   Mini de una estacion y el detalle de una «Próximamente» (Aspro) cuyo
+   minimercado ya anda. Antes el renglon de Aspro en el resumen llevaba a
+   una pantalla que lo mandaba de vuelta al resumen. */
+function miniDetalle(mm, ymRef){
+  if(!(mm && mm.r)) return '';
+  const r = mm.r, prom = mm.n ? Math.round(r.ventas/mm.n) : 0;
+  // El mes pasado, para comparar (lo arma db.mini_prev y viaja masticado:
+  // `prev` con las cifras, `prev_ym` cual mes es y `cerrado` si el mes que
+  // se muestra llego a su ultimo dia). De `cerrado` depende si se comparan
+  // totales o promedios por dia — ver vsMini.
+  const pv = mm.prev || null, pvYm = mm.prev_ym || '';
+  const dPv = pvYm ? diasDelMes(pvYm) : 0;
+  const vs = k => (pv && pvYm)
+    ? vsSub(vsMini(r[k], pv[k], mm.cerrado?0:mm.n, mm.cerrado?0:dPv), pvYm) : '';
+  // El margen y el resultado final NO se comparan con el mes abierto, ni
+  // siquiera por dia: la mercaderia se compra en tandas y el personal y la
+  // estructura se descuentan ENTEROS desde el dia 1, asi que hasta que el
+  // mes cierra los dos vienen hundidos por construccion. Un porcentaje ahi
+  // seria una cifra inventada, que es peor que no tener ninguna.
+  const vsFin = k => (pv && pvYm && mm.cerrado) ? vsSub(vsMini(r[k], pv[k], 0, 0), pvYm) : '';
+  // El rotulo sale del `ym` que viaja, no de un texto fijo: los primeros
+  // dias del mes la planilla del mini todavia es la del mes pasado, y
+  // decir «mes en curso» ahi es mentira justo los dias en que uno mira.
+  // `ymRef` es el mes del ultimo dia de la estacion (o del grupo, para una
+  // que todavia no manda la diaria). Sin referencia no se acusa nada.
+  const suyo = !mm.ym || !ymRef || mm.ym === ymRef;
+  const fMM = fechaArchivoMM(mm.archivo);
+  const mesMM = mm.ym ? MESN[+mm.ym.slice(5,7)-1] : mesAct;
+  const kpi = (l,v,sub)=>'<div class="kpi"><div class="lbl">'+l+'</div>'+
+    '<div class="val">'+v+'</div><div class="sub">'+sub+'</div></div>';
+  const cobros = [{l:'Efectivo',v:r.efectivo,c:'#D85A30'},{l:'Mercado Pago',v:r.mercado_pago,c:'#7F77DD'},
+                  {l:'Tarjeta',v:r.tarjeta,c:'#378ADD'},{l:'Red',v:r.red,c:'#8FA33B'},
+                  {l:'Shell Box',v:r.shellbox,c:'#1D9E75'}].filter(x=>x.v>0);
+  // Los ingresos de playa NO son un egreso: en una lista de egresos
+  // confunden, y el escritorio los marca aparte por eso mismo.
+  const salidas = [{l:'Mercadería',v:r.mercaderia,c:'#D85A30'},{l:'Insumos',v:r.insumos,c:'#EF9F27'},
+                   {l:'Gastos',v:r.gasto,c:'#888780'},{l:'Retenciones',v:r.retenciones,c:'#B0578D'}]
+                  .filter(x=>x.v>0);
+  const sinPlata = (r.ven||0)+(r.consumo||0)+(r.devoluciones||0);
+  const ms = Object.keys(mm.previos||{}).sort().reverse();
+  return (
+    '<div class="card"><h2>Minimercado · '+esc(mesMM)+'</h2>'+
+    '<div class="baj">'+(suyo?'Lo que va del mes':'La planilla del mes en curso todavía no llegó: '+
+      'esto es lo último que hay')+(fMM?' · planilla al '+fMM:'')+
+      '. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
+    '<div class="kpis" style="margin-top:8px">'+
+    kpi('Venta del mes','$ '+kf(r.ventas), mm.n+' días cargados · $ '+kf(prom)+'/día'+vs('ventas'))+
+    kpi('Ventas netas','$ '+kf(r.ventas_netas),'sin vencida, consumo ni devoluciones'+vs('ventas_netas'))+
+    kpi('Salió de la caja','$ '+kf(r.egresos),'mercadería, insumos, gastos')+
+    kpi('Margen bruto','$ '+kf(r.resultado),
+        (r.margen!=null?Math.round(r.margen*100)+'% de las netas · ':'')+'antes de sueldos'+vsFin('resultado'))+
+    (r.resultado_neto!=null
+      ? kpi('Resultado final','<span class="'+(r.resultado_neto>=0?'up':'down')+'">'+
+          (r.resultado_neto>=0?'':'−')+'$ '+kf(Math.abs(r.resultado_neto))+'</span>',
+          (r.empleados?r.empleados+' empleado'+(r.empleados===1?'':'s')+' · ':'sin personal cargado · ')+
+          'estructura aprox. descontada'+vsFin('resultado_neto'))
+      : '')+
+    '</div>'+
+    (cobros.length?'<div class="sec2">Cómo se cobró</div>'+hbars(cobros,'$',true):'')+
+    (salidas.length?'<div class="sec2">Qué salió de la caja</div>'+hbars(salidas,'$',true):'')+
+    (sinPlata?'<p class="baj" style="margin-top:10px">No entró plata por: vencida $ '+
+      kf(r.ven||0)+' · consumo del local $ '+kf(r.consumo||0)+' · devoluciones $ '+
+      kf(r.devoluciones||0)+'. Ya están descontadas de las ventas netas.</p>':'')+
+    (ms.length?'<div class="sec2">Meses cerrados</div><div style="overflow-x:auto"><table>'+
+      '<tr><th>Mes</th><th>Ventas</th><th>Netas</th><th>Salió</th><th>Margen</th></tr>'+
+      ms.map(m=>{const p=mm.previos[m]; return '<tr><td>'+esc(MESN[+m.slice(5,7)-1])+'</td>'+
+        '<td>$ '+kf(p.ventas||0)+'</td><td>$ '+kf(p.ventas_netas||0)+'</td>'+
+        '<td>$ '+kf(p.egresos||0)+'</td><td>$ '+kf(p.resultado||0)+'</td></tr>';}).join('')+
+      '</table></div>':'')+
+    (mm.archivo?'<p class="baj" style="margin-top:10px">Sale de '+esc(mm.archivo)+'. '+
+      'El mes en curso se rehace desde los turnos y la caja; los cerrados salen de la hoja Resultados.</p>':'')+
+    '</div>');
+}
+
 function vEstacion(clave){
   const n = NUEVAS.find(x=>x.clave===clave);
   if(n){
-    // Si su minimercado ya manda planilla, se dice donde verlo: si no, parece
-    // que la estacion entera esta parada.
-    const mini = n.minimercado && n.minimercado.r
-      ? '<div class="baj" style="margin-top:8px">Su minimercado ya está cargando: '+
-        'lo ves en el resumen de <b>Minimercados</b> de la vista general.</div>' : '';
+    // Su minimercado puede andar antes que la planilla diaria. Si ya manda,
+    // su detalle va ACA, debajo del aviso: el renglon del resumen de
+    // Minimercados trae a esta pantalla, y antes desde aca solo se podia
+    // volver al resumen (ida y vuelta sin ver nada). Va sin pestañas: es lo
+    // unico que tiene para mostrar.
+    // Los avisos dicen «totales de combustible» y no «los totales» a secas:
+    // el mini SI suma al resumen de Minimercados, y las dos frases juntas se
+    // contradecian.
+    const mm = n.minimercado && n.minimercado.r ? n.minimercado : null;
+    const mini = mm
+      ? '<div class="baj" style="margin-top:8px">Su minimercado ya está andando: '+
+        'lo tenés acá abajo y también suma en el resumen de <b>Minimercados</b> del grupo.</div>' : '';
     $('#vista').innerHTML =
       '<button class="volver" data-ruta="#general">‹ Vista general</button>'+
       '<div class="est-cab"><span class="sem" style="background:var(--acc)"></span><h1>'+n.nombre+'</h1>'+
@@ -1400,11 +1489,13 @@ function vEstacion(clave){
         ? '<div class="card"><h2>Se está poniendo en marcha</h2>'+
           '<div class="baj">'+n.nombre+' ya es del grupo y se está poniendo en marcha. '+
           'Cuando mande su primera planilla vas a ver acá el detalle del día. '+
-          'Hasta entonces no cuenta como faltante ni entra en los totales.</div>'+mini+'</div>'
+          'Hasta entonces no cuenta como faltante ni entra en los totales de combustible.</div>'+
+          mini+'</div>'
         : '<div class="card"><h2>Todavía no mandó ninguna planilla</h2>'+
           '<div class="baj">Es una estación nueva del grupo. Hasta su primera planilla '+
-          'no cuenta como faltante ni entra en los totales; desde ese día aparece '+
-          'sola como las demás.</div>'+mini+'</div>');
+          'no cuenta como faltante ni entra en los totales de combustible; desde ese día '+
+          'aparece sola como las demás.</div>'+mini+'</div>')+
+      (mm ? miniDetalle(mm, fechaMax ? fechaMax.slice(0,7) : '') : '');
     return;
   }
   const e = ESTS.find(x=>x.clave===clave); if(!e){location.hash='#general';return;}
@@ -1654,84 +1745,10 @@ function vEstacion(clave){
       '<div class="leyfr">'+codigos.map(c=>'<span style="background:'+frColor(c)+'">'+esc(c)+'</span>').join('')+'</div></div>';
   }
 
-  /* Minimercado (PORT-37). El resumen llega ya masticado por movil.py: `r`
-     con los totales, `n` cuantos dias hay cargados y `previos` los meses
-     cerrados. Las cuentas son las del escritorio (detMini en panel.html).
-     Va SIN semaforo, y eso es deliberado: la mercaderia se cuenta por lo
-     COMPRADO en el mes y no por lo vendido --nadie lleva stock--, asi que un
-     mes con mucha compra sobre el final da un margen bajo que no significa
-     nada malo. Un color ahi seria inventar un juicio que el dato no banca. */
-  let miniHtml='';
-  {
-    const mm = e.minimercado;
-    if(mm && mm.r){
-      const r = mm.r, prom = mm.n ? Math.round(r.ventas/mm.n) : 0;
-      // El mes pasado, para comparar (lo arma db.mini_prev y viaja masticado:
-      // `prev` con las cifras, `prev_ym` cual mes es y `cerrado` si el mes que
-      // se muestra llego a su ultimo dia). De `cerrado` depende si se comparan
-      // totales o promedios por dia — ver vsMini.
-      const pv = mm.prev || null, pvYm = mm.prev_ym || '';
-      const dPv = pvYm ? diasDelMes(pvYm) : 0;
-      const vs = k => (pv && pvYm)
-        ? vsSub(vsMini(r[k], pv[k], mm.cerrado?0:mm.n, mm.cerrado?0:dPv), pvYm) : '';
-      // El margen y el resultado final NO se comparan con el mes abierto, ni
-      // siquiera por dia: la mercaderia se compra en tandas y el personal y la
-      // estructura se descuentan ENTEROS desde el dia 1, asi que hasta que el
-      // mes cierra los dos vienen hundidos por construccion. Un porcentaje ahi
-      // seria una cifra inventada, que es peor que no tener ninguna.
-      const vsFin = k => (pv && pvYm && mm.cerrado) ? vsSub(vsMini(r[k], pv[k], 0, 0), pvYm) : '';
-      // El rotulo sale del `ym` que viaja, no de un texto fijo: los primeros
-      // dias del mes la planilla del mini todavia es la del mes pasado, y
-      // decir «mes en curso» ahi es mentira justo los dias en que uno mira.
-      const suyo = !mm.ym || mm.ym === (dias.length ? dias[dias.length-1].fecha.slice(0,7) : mm.ym);
-      const fMM = fechaArchivoMM(mm.archivo);
-      const mesMM = mm.ym ? MESN[+mm.ym.slice(5,7)-1] : mesAct;
-      const kpi = (l,v,sub)=>'<div class="kpi"><div class="lbl">'+l+'</div>'+
-        '<div class="val">'+v+'</div><div class="sub">'+sub+'</div></div>';
-      const cobros = [{l:'Efectivo',v:r.efectivo,c:'#D85A30'},{l:'Mercado Pago',v:r.mercado_pago,c:'#7F77DD'},
-                      {l:'Tarjeta',v:r.tarjeta,c:'#378ADD'},{l:'Red',v:r.red,c:'#8FA33B'},
-                      {l:'Shell Box',v:r.shellbox,c:'#1D9E75'}].filter(x=>x.v>0);
-      // Los ingresos de playa NO son un egreso: en una lista de egresos
-      // confunden, y el escritorio los marca aparte por eso mismo.
-      const salidas = [{l:'Mercadería',v:r.mercaderia,c:'#D85A30'},{l:'Insumos',v:r.insumos,c:'#EF9F27'},
-                       {l:'Gastos',v:r.gasto,c:'#888780'},{l:'Retenciones',v:r.retenciones,c:'#B0578D'}]
-                      .filter(x=>x.v>0);
-      const sinPlata = (r.ven||0)+(r.consumo||0)+(r.devoluciones||0);
-      const ms = Object.keys(mm.previos||{}).sort().reverse();
-      miniHtml =
-        '<div class="card"><h2>Minimercado · '+esc(mesMM)+'</h2>'+
-        '<div class="baj">'+(suyo?'Lo que va del mes':'La planilla del mes en curso todavía no llegó: '+
-          'esto es lo último que hay')+(fMM?' · planilla al '+fMM:'')+
-          '. La venta del sistema, lo que salió de la caja y qué queda.</div>'+
-        '<div class="kpis" style="margin-top:8px">'+
-        kpi('Venta del mes','$ '+kf(r.ventas), mm.n+' días cargados · $ '+kf(prom)+'/día'+vs('ventas'))+
-        kpi('Ventas netas','$ '+kf(r.ventas_netas),'sin vencida, consumo ni devoluciones'+vs('ventas_netas'))+
-        kpi('Salió de la caja','$ '+kf(r.egresos),'mercadería, insumos, gastos')+
-        kpi('Margen bruto','$ '+kf(r.resultado),
-            (r.margen!=null?Math.round(r.margen*100)+'% de las netas · ':'')+'antes de sueldos'+vsFin('resultado'))+
-        (r.resultado_neto!=null
-          ? kpi('Resultado final','<span class="'+(r.resultado_neto>=0?'up':'down')+'">'+
-              (r.resultado_neto>=0?'':'−')+'$ '+kf(Math.abs(r.resultado_neto))+'</span>',
-              (r.empleados?r.empleados+' empleado'+(r.empleados===1?'':'s')+' · ':'sin personal cargado · ')+
-              'estructura aprox. descontada'+vsFin('resultado_neto'))
-          : '')+
-        '</div>'+
-        (cobros.length?'<div class="sec2">Cómo se cobró</div>'+hbars(cobros,'$',true):'')+
-        (salidas.length?'<div class="sec2">Qué salió de la caja</div>'+hbars(salidas,'$',true):'')+
-        (sinPlata?'<p class="baj" style="margin-top:10px">No entró plata por: vencida $ '+
-          kf(r.ven||0)+' · consumo del local $ '+kf(r.consumo||0)+' · devoluciones $ '+
-          kf(r.devoluciones||0)+'. Ya están descontadas de las ventas netas.</p>':'')+
-        (ms.length?'<div class="sec2">Meses cerrados</div><div style="overflow-x:auto"><table>'+
-          '<tr><th>Mes</th><th>Ventas</th><th>Netas</th><th>Salió</th><th>Margen</th></tr>'+
-          ms.map(m=>{const p=mm.previos[m]; return '<tr><td>'+esc(MESN[+m.slice(5,7)-1])+'</td>'+
-            '<td>$ '+kf(p.ventas||0)+'</td><td>$ '+kf(p.ventas_netas||0)+'</td>'+
-            '<td>$ '+kf(p.egresos||0)+'</td><td>$ '+kf(p.resultado||0)+'</td></tr>';}).join('')+
-          '</table></div>':'')+
-        (mm.archivo?'<p class="baj" style="margin-top:10px">Sale de '+esc(mm.archivo)+'. '+
-          'El mes en curso se rehace desde los turnos y la caja; los cerrados salen de la hoja Resultados.</p>':'')+
-        '</div>';
-    }
-  }
+  // Minimercado (PORT-37): lo arma miniDetalle(), que tambien usa el
+  // detalle de una estacion «Próximamente».
+  const miniHtml = miniDetalle(e.minimercado,
+    dias.length ? dias[dias.length-1].fecha.slice(0,7) : '');
 
   // Solo hay pestaña Personal si hay algo que mostrar en ella.
   const hayPersonal = !!(personalHtml || calHtml);

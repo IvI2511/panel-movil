@@ -61,7 +61,7 @@ Y las que se agregaron con la paridad contra el panel de escritorio:
 | `conSinArrancar()` | las 6 al día y una séptima marcada `sin_arrancar` (nunca mandó una planilla). No es un faltante: la banda sigue en «Sin faltantes» |
 | `conProximamente()` | la de arriba más **Aspro**, la octava, con `sin_arrancar` **y** `proximamente`: ya es del grupo pero todavía no opera. Sale con el rótulo «Próximamente», al final y después de la «Por arrancar» (en el JSON viene adelante a propósito) |
 | `conProximamenteYMini()` | la misma con el **minimercado de Aspro ya andando** (arranca antes que la planilla diaria): entra al resumen de Minimercados del grupo |
-| `ochoEstaciones()` | las ocho de hoy (seis con minimercado, una séptima al día y Aspro «Próximamente»). La usa `tools/verificar_layout.py` para medir el panel en un navegador, también a 375 px |
+| `ochoEstaciones()` | las ocho de hoy (las seis de `conMinimercado()`, una séptima al día y Aspro «Próximamente» con su minimercado ya andando). La usa `tools/verificar_layout.py` para medir el panel en un navegador, también a 375 px |
 
 El fixture también trae `pr_*` (precios) sólo en los días 3 y 15, para
 ejercitar el arrastre en los dos sentidos, y `pu` (lectura del puente de GNC)

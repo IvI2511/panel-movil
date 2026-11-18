@@ -552,7 +552,7 @@ seccion('Aspro: una estacion del grupo que todavia no opera sale como «Próxima
   check(/Aspro/.test(det) && /Próximamente/.test(det) && /ya es del grupo/.test(det)
         && /primera planilla/.test(det),
     'su detalle explica que se esta poniendo en marcha (dice: ' + det.slice(0, 90) + ')');
-  check(!/minimercado ya está cargando/.test(det), 'sin minimercado, el detalle no lo menciona');
+  check(!/minimercado ya está andando/.test(det), 'sin minimercado, el detalle no lo menciona');
   const cinta = sinTags(correr(d, {hoy: '2026-08-22'}).html('#cinta'));
   check(!/Aspro/.test(cinta), 'la cinta de abajo no la nombra');
   // Un panel-movil.json armado por un escritorio que manda `proximamente` sin
@@ -585,10 +585,73 @@ seccion('Aspro: su minimercado entra al resumen aunque la estacion no opere');
     'el resumen de Minimercados la lista (dice: ' + mini.slice(0, 120) + ')');
   check(/El unico del grupo/.test(mini), 'y cuenta su mini como del grupo');
   const det = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#est/aspro'));
-  check(/minimercado ya está cargando/.test(det), 'su detalle avisa donde ver el minimercado');
+  check(/minimercado ya está andando/.test(det), 'su detalle avisa que el minimercado ya anda');
   // Control: sin minimercado no hay resumen.
   const sin = sinTags(irA(correr(fx.conProximamente(), {hoy: '2026-08-22'}), '#'));
   check(!/Minimercados ·/.test(sin), 'control: sin mini no sale el resumen');
+}
+
+// ===================================================================
+seccion('Aspro: el renglon de su minimercado lleva a un detalle de verdad');
+// ===================================================================
+// El renglon del resumen trae a #est/aspro. Antes esa pantalla solo decia
+// «lo ves en el resumen de Minimercados» y no tenia el detalle por ningun
+// lado: ida y vuelta sin ver nada. Ahora el detalle va ahi, debajo del aviso.
+{
+  const d = fx.conProximamenteYMini();
+  const gen = irA(correr(d, {hoy: '2026-08-22'}), '#');
+  check(/<button class="hb"[^>]*data-ruta="#est\/aspro"/.test(gen),
+    'guarda: su renglon del resumen lleva a #est/aspro');
+  const det = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#est/aspro'));
+  check(/Minimercado · agosto/.test(det), 'el detalle trae la tarjeta del minimercado (dice: ' +
+    det.slice(0, 160) + ')');
+  check(/Cómo se cobró/.test(det) && /Efectivo/.test(det) && /Mercado Pago/.test(det),
+    'con como se cobro');
+  check(/Qué salió de la caja/.test(det) && /Mercadería/.test(det), 'y lo que salio de la caja');
+  check(/Lo que va del mes/.test(det),
+    'su planilla es del mes del grupo: no avisa «todavia no llego»');
+  check(!/lo ves en el resumen de Minimercados de la vista general/.test(det),
+    'ya no manda de vuelta al resumen');
+  // Las dos frases ya no se contradicen: la exclusion es del combustible.
+  check(/no cuenta como faltante ni entra en los totales de combustible/.test(det)
+        && /también suma en el resumen de Minimercados/.test(det),
+    'el aviso dice que queda fuera de los totales DE COMBUSTIBLE y que el mini si suma');
+  // Sin minimercado, nada de la tarjeta.
+  const sin = sinTags(irA(correr(fx.conProximamente(), {hoy: '2026-08-22'}), '#est/aspro'));
+  check(!/Minimercado ·/.test(sin) && !/minimercado ya está andando/.test(sin),
+    'control: sin mini el detalle no muestra tarjeta ni aviso');
+  // La pestaña Mini de una estacion que opera sigue igual (misma funcion).
+  const adr = sinTags(irA(correr(fx.conMinimercado(), {hoy: '2026-08-22'}), '#est/adrogue'));
+  check(/Minimercado · agosto/.test(adr) && /Cómo se cobró/.test(adr) && /Meses cerrados/.test(adr),
+    'la pestaña Mini de Adrogue sigue trayendo todo');
+}
+
+// ===================================================================
+seccion('Aspro: su minimercado junto a los otros, con mes pasado y sin el');
+// ===================================================================
+// El caso real: Aspro arranca con su mini cuando los demas ya tienen meses
+// cerrados. Ella no tiene mes anterior, asi que el «vs julio» del grupo tiene
+// que salir SOLO de los que estan en los dos meses y decirlo.
+{
+  const d = fx.dosMinis();
+  const asp = fx.conProximamenteYMini().estaciones.find(x => x.clave === 'aspro');
+  d.estaciones.push(asp);
+  check(!asp.minimercado.prev && asp.minimercado.ym === '2026-08'
+        && d.estaciones.filter(x => x.minimercado && x.minimercado.ym === '2026-08').length === 3,
+    'guarda: tres minis en agosto y Aspro sin mes anterior');
+  const html = irA(correr(d, {hoy: '2026-08-22'}), '#');
+  const v = sinTags(html);
+  const mini = (v.split('Minimercados ·')[1] || '');
+  check(/Los 3 del grupo/.test(mini), 'el resumen cuenta los tres (dice: ' + mini.slice(0, 80) + ')');
+  const sub = subDeKpi(html, 'Venta del mes');
+  check(/2 de 3/.test(sub || ''),
+    'el «vs julio» avisa que compara 2 de 3 (dice: ' + sub + ')');
+  check(/<button class="hb"[^>]*data-ruta="#est\/aspro"/.test(html)
+        && /<button class="hb"[^>]*data-ruta="#est\/adrogue"/.test(html),
+    'cada renglon lleva a su estacion');
+  const det = sinTags(irA(correr(d, {hoy: '2026-08-22'}), '#est/aspro'));
+  check(/Minimercado · agosto/.test(det) && !/ julio/.test(det.split('Minimercado ·')[1] || ''),
+    'el detalle de Aspro no inventa un «vs julio» que no tiene');
 }
 
 // ===================================================================
