@@ -34,9 +34,10 @@ from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
 PUERTO = 8899
-# 390 y 844 son el mismo telefono, parado y acostado. 1024 la tablet, 1280 la
-# pantalla grande donde aparece la barra lateral.
-ANCHOS = [(390, 844), (844, 390), (1024, 768), (1280, 800)]
+# 390 y 844 son el mismo telefono, parado y acostado. 375 el telefono mas
+# angosto que se usa en el grupo. 1024 la tablet, 1280 la pantalla grande
+# donde aparece la barra lateral.
+ANCHOS = [(375, 812), (390, 844), (844, 390), (1024, 768), (1280, 800)]
 MINIMO_TACTIL = 43.5     # 44 real; 43,5 porque el layout redondea a 43,99
 MINIMO_HUECO = 8         # px entre dos tarjetas apiladas
 MAXIMO_PESTANAS = 90     # la barra de pestanas es una fila, no una columna
@@ -117,16 +118,19 @@ def _servir():
 
 
 def _fixture() -> str:
-    """Genera el JSON de prueba desde fixtures.js, que es la fuente."""
-    destino = RAIZ / "tests" / "fixtures" / "conMinimercado.json"
+    """Genera el JSON de prueba desde fixtures.js, que es la fuente.
+
+    Las ocho estaciones (nov-2026, con Aspro «Próximamente»): es lo que se ve
+    hoy en el telefono, y una ficha mas es la que puede romper la grilla."""
+    destino = RAIZ / "tests" / "fixtures" / "ochoEstaciones.json"
     destino.parent.mkdir(exist_ok=True)
     subprocess.run(
         ["node", "-e",
          "const f=require('./tests/fixtures.js');"
-         "require('fs').writeFileSync('tests/fixtures/conMinimercado.json',"
-         "JSON.stringify(f.conMinimercado()));"],
+         "require('fs').writeFileSync('tests/fixtures/ochoEstaciones.json',"
+         "JSON.stringify(f.ochoEstaciones()));"],
         cwd=str(RAIZ), check=True)
-    return "conMinimercado.json"
+    return "ochoEstaciones.json"
 
 
 CARGAR = """async (f) => {
@@ -164,7 +168,8 @@ def main() -> int:
                 etq = f"{ancho}x{alto}"
                 # La vista general y la estacion con sus pestanas: los defectos
                 # aparecieron en la estacion, que es la que tiene mas piezas.
-                for vista, hash_ in (("general", "#general"), ("estacion", "#est/adrogue")):
+                for vista, hash_ in (("general", "#general"), ("estacion", "#est/adrogue"),
+                                    ("proximamente", "#est/aspro")):
                     pg.evaluate(f"location.hash='{hash_}'")
                     pg.wait_for_timeout(500)
                     pestanas = pg.query_selector_all("#eTabs .tab")

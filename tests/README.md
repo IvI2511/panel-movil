@@ -59,6 +59,9 @@ Y las que se agregaron con la paridad contra el panel de escritorio:
 | `conZona()` | los precios de la zona. En el paquete real llega `zona: {}` porque ninguna estación tiene lat/lon en la config del escritorio, así que **este fixture es la única forma de ver la tarjeta** |
 | `conEstacionNueva()` | las 6 al día y una **séptima recién dada de alta**, con el mes entero pero **sin mes anterior**. El «vs mes pasado» del grupo tiene que salir de las 6 que están en los dos meses: con la nueva adentro del numerador daba ↑ 26,7% donde eran ↑ 10,3% |
 | `conSinArrancar()` | las 6 al día y una séptima marcada `sin_arrancar` (nunca mandó una planilla). No es un faltante: la banda sigue en «Sin faltantes» |
+| `conProximamente()` | la de arriba más **Aspro**, la octava, con `sin_arrancar` **y** `proximamente`: ya es del grupo pero todavía no opera. Sale con el rótulo «Próximamente», al final y después de la «Por arrancar» (en el JSON viene adelante a propósito) |
+| `conProximamenteYMini()` | la misma con el **minimercado de Aspro ya andando** (arranca antes que la planilla diaria): entra al resumen de Minimercados del grupo |
+| `ochoEstaciones()` | las ocho de hoy (seis con minimercado, una séptima al día y Aspro «Próximamente»). La usa `tools/verificar_layout.py` para medir el panel en un navegador, también a 375 px |
 
 El fixture también trae `pr_*` (precios) sólo en los días 3 y 15, para
 ejercitar el arrastre en los dos sentidos, y `pu` (lectura del puente de GNC)
